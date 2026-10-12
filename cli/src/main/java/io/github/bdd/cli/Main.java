@@ -35,7 +35,7 @@ public final class Main {
         ExecutionResult result;
         try {
             result = Engine.run(new ExecutionRequest(workspace));
-        } catch (IllegalArgumentException | IllegalStateException e) {
+        } catch (RuntimeException e) {
             err.println(e.getMessage());
             return EXIT_ERROR;
         }

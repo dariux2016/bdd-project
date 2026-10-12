@@ -86,6 +86,16 @@ class MainTest {
         assertThat(err.toString(StandardCharsets.UTF_8)).contains("No 'features' directory in workspace");
     }
 
+    @Test
+    void unparsableFeatureExitsWithErrorInsteadOfLookingLikeAFailedScenario() throws IOException {
+        feature("""
+                Given a step outside of any feature
+                """);
+
+        assertThat(run("run", workspace.toString())).isEqualTo(2);
+        assertThat(err.toString(StandardCharsets.UTF_8)).contains("store.feature");
+    }
+
     private int run(String... args) {
         return Main.execute(args, new PrintStream(out, true, StandardCharsets.UTF_8),
                 new PrintStream(err, true, StandardCharsets.UTF_8));
