@@ -38,7 +38,8 @@ public final class Engine {
                 .map(ServiceLoader.Provider::get)
                 .toList();
         Profile profile = Profile.load(workspace, request.profile(), request.environment(), connectors);
-        CatalogBackend backend = new CatalogBackend(connectors, profile);
+        CurrentStep currentStep = new CurrentStep(workspace);
+        CatalogBackend backend = new CatalogBackend(connectors, profile, currentStep);
         ResultCollector collector = new ResultCollector(workspace);
 
         RuntimeOptions options = new RuntimeOptionsBuilder()
@@ -48,7 +49,7 @@ public final class Engine {
                 .withRuntimeOptions(options)
                 .withClassLoader(() -> classLoader)
                 .withBackendSupplier(() -> List.of(backend))
-                .withAdditionalPlugins(collector)
+                .withAdditionalPlugins(collector, currentStep)
                 .build()
                 .run();
 
