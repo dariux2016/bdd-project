@@ -15,11 +15,11 @@ final class CatalogBackend implements Backend {
 
     private final List<PhraseStepDefinition> stepDefinitions = new ArrayList<>();
 
-    CatalogBackend(List<Connector> connectors) {
+    CatalogBackend(List<Connector> connectors, Profile profile) {
         for (Connector connector : connectors) {
             for (Phrase phrase : connector.defaultPhrases()) {
                 stepDefinitions.add(
-                        new PhraseStepDefinition(connector.sourceType(), phrase, action(connector, phrase)));
+                        new PhraseStepDefinition(connector.sourceType(), phrase, action(connector, phrase), profile));
             }
         }
     }

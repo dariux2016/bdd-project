@@ -1,11 +1,13 @@
 package io.github.bdd.engine;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -16,17 +18,28 @@ class EngineTest {
     @TempDir
     Path workspace;
 
+    @BeforeEach
+    void declareTheFruitSource() throws IOException {
+        sources("""
+                profiles:
+                  local:
+                    sources:
+                      fruit:
+                        type: fake
+                """);
+    }
+
     @Test
     void featureUsingConnectorPhrasesPasses() throws IOException {
         feature("store.feature", """
                 Feature: Store
                   Scenario: Adding to a key
-                    Given the fake store has "apples" set to 5
-                    When 3 is added to "apples" in the fake store
-                    Then the fake store should have "apples" equal to 8
+                    Given the fake store "fruit" has "apples" set to 5
+                    When 3 is added to "apples" in the fake store "fruit"
+                    Then the fake store "fruit" should have "apples" equal to 8
                 """);
 
-        ExecutionResult result = Engine.run(new ExecutionRequest(workspace));
+        ExecutionResult result = Engine.run(new ExecutionRequest(workspace, "local", Map.of()));
 
         assertThat(result.successful()).isTrue();
         assertThat(result.scenarios()).singleElement().satisfies(scenario -> {
@@ -36,11 +49,11 @@ class EngineTest {
             assertThat(scenario.steps()).extracting(StepResult::keyword, StepResult::text, StepResult::status)
                     .containsExactly(
                             tuple(
-                                    "Given", "the fake store has \"apples\" set to 5", Status.PASSED),
+                                    "Given", "the fake store \"fruit\" has \"apples\" set to 5", Status.PASSED),
                             tuple(
-                                    "When", "3 is added to \"apples\" in the fake store", Status.PASSED),
+                                    "When", "3 is added to \"apples\" in the fake store \"fruit\"", Status.PASSED),
                             tuple(
-                                    "Then", "the fake store should have \"apples\" equal to 8", Status.PASSED));
+                                    "Then", "the fake store \"fruit\" should have \"apples\" equal to 8", Status.PASSED));
         });
     }
 
@@ -49,12 +62,12 @@ class EngineTest {
         feature("store.feature", """
                 Feature: Store
                   Scenario: Wrong expectation
-                    Given the fake store has "apples" set to 5
-                    Then the fake store should have "apples" equal to 6
-                    And the fake store should have "apples" equal to 5
+                    Given the fake store "fruit" has "apples" set to 5
+                    Then the fake store "fruit" should have "apples" equal to 6
+                    And the fake store "fruit" should have "apples" equal to 5
                 """);
 
-        ExecutionResult result = Engine.run(new ExecutionRequest(workspace));
+        ExecutionResult result = Engine.run(new ExecutionRequest(workspace, "local", Map.of()));
 
         assertThat(result.successful()).isFalse();
         ScenarioResult scenario = result.scenarios().getFirst();
@@ -69,21 +82,21 @@ class EngineTest {
         feature("store.feature", """
                 Feature: Store
                   Scenario: Unknown phrase
-                    Given the fake store has "apples" set to 5
+                    Given the fake store "fruit" has "apples" set to 5
                     When the apples are eaten
-                    Then the fake store should have "apples" equal to 5
+                    Then the fake store "fruit" should have "apples" equal to 5
                 """);
 
-        ExecutionResult result = Engine.run(new ExecutionRequest(workspace));
+        ExecutionResult result = Engine.run(new ExecutionRequest(workspace, "local", Map.of()));
 
         assertThat(result.successful()).isFalse();
         ScenarioResult scenario = result.scenarios().getFirst();
         assertThat(scenario.status()).isEqualTo(Status.UNDEFINED);
         assertThat(scenario.steps()).extracting(StepResult::text, StepResult::status)
                 .containsExactly(
-                        tuple("the fake store has \"apples\" set to 5", Status.PASSED),
+                        tuple("the fake store \"fruit\" has \"apples\" set to 5", Status.PASSED),
                         tuple("the apples are eaten", Status.UNDEFINED),
-                        tuple("the fake store should have \"apples\" equal to 5", Status.SKIPPED));
+                        tuple("the fake store \"fruit\" should have \"apples\" equal to 5", Status.SKIPPED));
     }
 
     @Test
@@ -91,9 +104,9 @@ class EngineTest {
         feature("store.feature", """
                 Feature: Store
                   Scenario Outline: Adding to a key
-                    Given the fake store has "<key>" set to <start>
-                    When <amount> is added to "<key>" in the fake store
-                    Then the fake store should have "<key>" equal to <total>
+                    Given the fake store "fruit" has "<key>" set to <start>
+                    When <amount> is added to "<key>" in the fake store "fruit"
+                    Then the fake store "fruit" should have "<key>" equal to <total>
 
                     Examples:
                       | key    | start | amount | total |
@@ -101,14 +114,14 @@ class EngineTest {
                       | pears  | 1     | 1      | 3     |
                 """);
 
-        ExecutionResult result = Engine.run(new ExecutionRequest(workspace));
+        ExecutionResult result = Engine.run(new ExecutionRequest(workspace, "local", Map.of()));
 
         assertThat(result.scenarios()).extracting(ScenarioResult::line, ScenarioResult::status)
                 .containsExactly(tuple(9, Status.PASSED), tuple(10, Status.FAILED));
         assertThat(result.scenarios().get(1).steps()).last()
                 .extracting(StepResult::text, StepResult::error)
                 .containsExactly(
-                        "the fake store should have \"pears\" equal to 3",
+                        "the fake store \"fruit\" should have \"pears\" equal to 3",
                         "Expected \"pears\" to equal 3 but was 2");
     }
 
@@ -117,10 +130,10 @@ class EngineTest {
         feature("fruit/store.feature", """
                 Feature: Store
                   Scenario: Setting a key
-                    Given the fake store has "apples" set to 5
+                    Given the fake store "fruit" has "apples" set to 5
                 """);
 
-        ExecutionResult result = Engine.run(new ExecutionRequest(workspace));
+        ExecutionResult result = Engine.run(new ExecutionRequest(workspace, "local", Map.of()));
 
         assertThat(result.scenarios()).extracting(ScenarioResult::feature, ScenarioResult::status)
                 .containsExactly(tuple("features/fruit/store.feature", Status.PASSED));
@@ -128,9 +141,13 @@ class EngineTest {
 
     @Test
     void workspaceWithoutFeaturesDirectoryIsRejected() {
-        assertThatThrownBy(() -> Engine.run(new ExecutionRequest(workspace)))
+        assertThatThrownBy(() -> Engine.run(new ExecutionRequest(workspace, "local", Map.of())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("No 'features' directory in workspace");
+    }
+
+    private void sources(String content) throws IOException {
+        Files.writeString(workspace.resolve("sources.yaml"), content);
     }
 
     private void feature(String name, String content) throws IOException {

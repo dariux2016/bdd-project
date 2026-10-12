@@ -18,9 +18,12 @@ public final class Engine {
     }
 
     /**
-     * Executes the features of a workspace with the phrases of the installed connectors.
+     * Executes the features of a workspace with the phrases of the installed connectors, on the
+     * sources of a profile.
      *
      * @throws IllegalArgumentException if the workspace has no {@code features} directory
+     * @throws ConfigurationException if the configuration of the sources is invalid, lacks the
+     *     requested profile or uses a source type no installed connector handles
      * @throws IllegalStateException if an installed connector declares an invalid phrase
      */
     public static ExecutionResult run(ExecutionRequest request) {
@@ -34,7 +37,8 @@ public final class Engine {
         List<Connector> connectors = ServiceLoader.load(Connector.class, classLoader).stream()
                 .map(ServiceLoader.Provider::get)
                 .toList();
-        CatalogBackend backend = new CatalogBackend(connectors);
+        Profile profile = Profile.load(workspace, request.profile(), request.environment(), connectors);
+        CatalogBackend backend = new CatalogBackend(connectors, profile);
         ResultCollector collector = new ResultCollector(workspace);
 
         RuntimeOptions options = new RuntimeOptionsBuilder()

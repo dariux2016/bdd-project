@@ -19,6 +19,10 @@ public final class Arguments {
         return (Integer) value(name);
     }
 
+    public Source source(String name) {
+        return (Source) value(name);
+    }
+
     private Object value(String name) {
         Object value = values.get(name);
         if (value == null) {

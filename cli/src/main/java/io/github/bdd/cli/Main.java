@@ -18,6 +18,8 @@ public final class Main {
     private static final int EXIT_SCENARIOS_NOT_PASSED = 1;
     private static final int EXIT_ERROR = 2;
 
+    private static final String USAGE = "Usage: run [workspace] [--profile <name>]";
+
     private Main() {
     }
 
@@ -26,15 +28,27 @@ public final class Main {
     }
 
     static int execute(String[] args, PrintStream out, PrintStream err) {
-        if (args.length < 1 || args.length > 2 || !args[0].equals("run")) {
-            err.println("Usage: run [workspace]");
+        if (args.length < 1 || !args[0].equals("run")) {
+            err.println(USAGE);
             return EXIT_ERROR;
         }
-        Path workspace = Path.of(args.length == 2 ? args[1] : "");
+        String workspace = null;
+        String profile = null;
+        for (int i = 1; i < args.length; i++) {
+            if (args[i].equals("--profile") && profile == null && i + 1 < args.length
+                    && !args[i + 1].startsWith("--")) {
+                profile = args[++i];
+            } else if (!args[i].startsWith("--") && workspace == null) {
+                workspace = args[i];
+            } else {
+                err.println(USAGE);
+                return EXIT_ERROR;
+            }
+        }
 
         ExecutionResult result;
         try {
-            result = Engine.run(new ExecutionRequest(workspace));
+            result = Engine.run(new ExecutionRequest(Path.of(workspace == null ? "" : workspace), profile));
         } catch (RuntimeException e) {
             err.println(e.getMessage());
             return EXIT_ERROR;
