@@ -32,3 +32,30 @@ header { padding: 6px 10px; border-bottom: 1px solid #ddd; display: flex; gap: 1
 .tok-string { color: #c50; }
 .tok-table { color: #068; }
 .tok-docstring { color: #c50; }
+
+/* Live validation and autocompletion */
+#catalog-link { font-size: 13px; }
+.mark { text-decoration: underline wavy #c00; text-decoration-skip-ink: none; }
+.mark-pending { text-decoration-color: #d90; background: rgba(255, 190, 0, .15); }
+.mark-undefined, .mark-error, .mark-ambiguous { background: rgba(220, 0, 0, .10); }
+#problems { list-style: none; margin: 0; padding: 0; max-height: 140px; overflow: auto; border-top: 1px solid #ddd; }
+#problems .problem { padding: 4px 10px; cursor: pointer; border-left: 4px solid #c00; }
+#problems .problem-pending { border-left-color: #d90; }
+#problems .problem:hover { background: #f5f5f5; }
+#suggestions {
+  position: absolute; left: 10px; z-index: 5; list-style: none; margin: 0; padding: 0;
+  max-height: 220px; overflow: auto; background: #fff; border: 1px solid #aaa;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .2); font: 13px ui-monospace, Consolas, monospace;
+}
+#suggestions li { padding: 3px 8px; cursor: pointer; white-space: pre; }
+#suggestions li.active, #suggestions li:hover { background: #cde; }
+
+/* Catalog page */
+body.page { display: block; overflow: auto; }
+.catalog-page header { gap: 16px; }
+#filters { display: flex; gap: 16px; align-items: end; padding: 10px; border-bottom: 1px solid #ddd; flex-wrap: wrap; }
+#filters label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+#filters input { min-width: 240px; }
+#phrases { border-collapse: collapse; width: 100%; }
+#phrases th, #phrases td { text-align: left; padding: 5px 10px; border-bottom: 1px solid #eee; vertical-align: top; }
+#phrases td.pattern { font-family: ui-monospace, Consolas, monospace; font-size: 13px; }

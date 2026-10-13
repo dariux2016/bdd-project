@@ -52,6 +52,8 @@ final class Catalog {
 
     private final List<Declared> declared = new ArrayList<>();
     private final List<PhraseStepDefinition> definitions = new ArrayList<>();
+    /** What each definition matches, in the order of {@link #declared}; as Cucumber matches a step. */
+    private List<Pattern> regexps = List.of();
 
     /**
      * @throws ConfigurationException if the catalog file is invalid, an alias does not fit the phrase
@@ -159,7 +161,7 @@ final class Catalog {
         ParameterTypeRegistry registry = new ParameterTypeRegistry(Locale.ENGLISH);
         registry.defineParameterType(integerOrVariable());
         ExpressionFactory factory = new ExpressionFactory(registry);
-        List<Pattern> regexps = definitions.stream()
+        regexps = definitions.stream()
                 .map(definition -> factory.createExpression(definition.getPattern()).getRegexp())
                 .toList();
         List<List<String>> samples = definitions.stream()
@@ -218,6 +220,18 @@ final class Catalog {
 
     List<PhraseStepDefinition> definitions() {
         return List.copyOf(definitions);
+    }
+
+    /** The entries whose phrase matches a step, as Cucumber would match it at execution. */
+    List<CatalogEntry> matching(String stepText) {
+        List<CatalogEntry> all = entries();
+        List<CatalogEntry> matching = new ArrayList<>();
+        for (int i = 0; i < regexps.size(); i++) {
+            if (regexps.get(i).matcher(stepText).matches()) {
+                matching.add(all.get(i));
+            }
+        }
+        return matching;
     }
 
     List<CatalogEntry> entries() {
