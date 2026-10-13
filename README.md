@@ -104,6 +104,43 @@ And no record exists in the fake store "ordini" for 5 seconds
 
 Le frasi qui sopra sono quelle del connettore finto. Ogni connettore dichiara le proprie, indicando per ciascuna l'azione di lettura, la verifica che il motore applica ai record restituiti e, se vuole, il parametro `{timeout}`.
 
+## Diagnostica dei fallimenti
+
+Una verifica fallita riporta la condizione attesa e i record osservati all'ultimo tentativo, così l'autore capisce il problema senza aprire il database:
+
+```
+Expected exactly 2 matching records, but 1 of the 3 observed records match
+Observed records:
+  {"id":1,"status":"PAID"}
+  {"id":2,"status":"NEW"}
+  (1 more record omitted)
+```
+
+Per non esporre dati riservati il motore, per tutti i connettori:
+
+- tronca l'output a `diagnostics.maxRecords` record (default 10) e a `diagnostics.maxSize` caratteri di JSON (default 2000), in `<workspace>/settings.yaml`; un record si mostra intero o non si mostra, e quelli omessi sono contati;
+- maschera con `***` i campi elencati in `mask` nella configurazione di una sorgente, in `sources.yaml`. Sono JSONPath, quindi anche annidati o dentro array; `$..password` li maschera a qualsiasi profondità.
+
+```yaml
+# settings.yaml
+diagnostics:
+  maxRecords: 5
+  maxSize: 1000
+```
+
+```yaml
+# sources.yaml
+profiles:
+  local:
+    sources:
+      ordini:
+        type: postgresql
+        mask: [password, customer.card, $.lines[*].secret]
+        config: ...
+```
+
+Il mascheramento riguarda ciò che si mostra: i filtri e i confronti JSON vedono i valori reali.
+
 ## Build
 
 Richiede Java 21 e Maven.

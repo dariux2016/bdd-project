@@ -1,5 +1,6 @@
 package io.github.bdd.engine;
 
+import com.jayway.jsonpath.JsonPath;
 import io.cucumber.core.backend.CucumberInvocationTargetException;
 import io.cucumber.core.backend.ParameterInfo;
 import io.cucumber.core.backend.StepDefinition;
@@ -11,7 +12,6 @@ import io.github.bdd.plugin.Arguments;
 import io.github.bdd.plugin.Parameter;
 import io.github.bdd.plugin.ParameterType;
 import io.github.bdd.plugin.Phrase;
-import io.github.bdd.plugin.Source;
 import io.github.bdd.plugin.Verification;
 
 import java.lang.reflect.InvocationTargetException;
@@ -50,12 +50,12 @@ final class PhraseStepDefinition implements StepDefinition {
     private final List<Parameter> parameters = new ArrayList<>();
 
     PhraseStepDefinition(String sourceType, Phrase phrase, Action action, Profile profile, Polling polling,
-            CurrentStep currentStep) {
+            Diagnostics diagnostics, CurrentStep currentStep) {
         this.location = "phrase '" + phrase.pattern() + "' of connector '" + sourceType + "'";
         this.sourceType = sourceType;
         this.profile = profile;
         this.action = action;
-        this.verifier = phrase.verification() == null ? null : new Verifier(phrase.verification(), currentStep);
+        this.verifier = phrase.verification() == null ? null : new Verifier(phrase.verification(), currentStep, diagnostics);
         this.polling = polling;
         this.currentStep = currentStep;
         if (verifier != null && action.kind() == ActionKind.WRITE) {
@@ -119,6 +119,7 @@ final class PhraseStepDefinition implements StepDefinition {
     public void execute(Object[] args) {
         try {
             Map<String, Object> values = new HashMap<>();
+            List<JsonPath> masked = new ArrayList<>();
             Integer count = null;
             String ignored = null;
             Integer timeout = null;
@@ -131,8 +132,13 @@ final class PhraseStepDefinition implements StepDefinition {
                 } else if (parameter == TIMEOUT) {
                     timeout = (Integer) args[i];
                 } else {
-                    values.put(parameter.name(),
-                            parameter.type() == ParameterType.SOURCE ? source((String) args[i]) : args[i]);
+                    if (parameter.type() == ParameterType.SOURCE) {
+                        ConfiguredSource source = source((String) args[i]);
+                        masked.addAll(source.masked());
+                        values.put(parameter.name(), source.source());
+                    } else {
+                        values.put(parameter.name(), args[i]);
+                    }
                 }
             }
             Arguments arguments = new Arguments(values);
@@ -146,7 +152,7 @@ final class PhraseStepDefinition implements StepDefinition {
             String ignoredPaths = ignored;
             polling(timeout).run(
                     () -> verifier.verify(
-                            action.handler().execute(arguments), expectedCount, ignoredPaths, stepArgument),
+                            action.handler().execute(arguments), expectedCount, ignoredPaths, masked, stepArgument),
                     verifier.lasting());
         } catch (Exception | AssertionError e) {
             throw new CucumberInvocationTargetException(this, new InvocationTargetException(e));
@@ -166,7 +172,7 @@ final class PhraseStepDefinition implements StepDefinition {
     }
 
     /** The source a step cites, provided the action may run on it. */
-    private Source source(String name) {
+    private ConfiguredSource source(String name) {
         ConfiguredSource source = profile.source(name);
         if (!source.type().equals(sourceType)) {
             throw new IllegalArgumentException("Source '" + name + "' of " + profile + " is of type '"
@@ -176,7 +182,7 @@ final class PhraseStepDefinition implements StepDefinition {
             throw new IllegalStateException("Source '" + name + "' of " + profile
                     + " is read-only: this step writes to it, so it was not executed");
         }
-        return source.source();
+        return source;
     }
 
     /**

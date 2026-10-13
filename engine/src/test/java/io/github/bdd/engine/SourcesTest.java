@@ -341,7 +341,7 @@ class SourcesTest {
         assertThatThrownBy(() -> run("local"))
                 .isInstanceOf(ConfigurationException.class)
                 .hasMessage("Invalid sources.yaml: profiles.staging.sources.fruit.kind: "
-                        + "unknown property; allowed: type, readOnly, config");
+                        + "unknown property; allowed: type, readOnly, mask, config");
     }
 
     @Test

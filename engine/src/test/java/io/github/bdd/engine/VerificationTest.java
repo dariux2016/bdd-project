@@ -41,7 +41,7 @@ class VerificationTest {
                   | field  | operator | value |
                   | status | equals   | NEW   |
                   | id     | equals   | 3     |
-                """)).isEqualTo("Expected a matching record, but 0 of the 3 observed records match");
+                """)).startsWith("Expected a matching record, but 0 of the 3 observed records match");
     }
 
     @Test
@@ -55,7 +55,7 @@ class VerificationTest {
                 Then no record exists in the fake store "shop"
                   | field  | operator | value |
                   | status | equals   | PAID  |
-                """)).isEqualTo("Expected no matching record, but 2 of the 3 observed records match");
+                """)).startsWith("Expected no matching record, but 2 of the 3 observed records match");
     }
 
     @Test
@@ -65,7 +65,7 @@ class VerificationTest {
                 """)).isEqualTo(Status.PASSED);
         assertThat(errorOf("""
                 Then no record exists in the fake store "shop"
-                """)).isEqualTo("Expected no matching record, but 3 of the 3 observed records match");
+                """)).startsWith("Expected no matching record, but 3 of the 3 observed records match");
     }
 
     @Test
@@ -82,11 +82,11 @@ class VerificationTest {
                 .isEqualTo(Status.PASSED);
 
         assertThat(errorOf("Then exactly 1 record exists in the fake store \"shop\"\n" + paid))
-                .isEqualTo("Expected exactly 1 matching record, but 2 of the 3 observed records match");
+                .startsWith("Expected exactly 1 matching record, but 2 of the 3 observed records match");
         assertThat(errorOf("Then at least 3 records exist in the fake store \"shop\"\n" + paid))
-                .isEqualTo("Expected at least 3 matching records, but 2 of the 3 observed records match");
+                .startsWith("Expected at least 3 matching records, but 2 of the 3 observed records match");
         assertThat(errorOf("Then at most 1 record exists in the fake store \"shop\"\n" + paid))
-                .isEqualTo("Expected at most 1 matching record, but 2 of the 3 observed records match");
+                .startsWith("Expected at most 1 matching record, but 2 of the 3 observed records match");
     }
 
     @Test
@@ -228,7 +228,7 @@ class VerificationTest {
                   \"""
                   {"id": 2, "status": "PAID"}
                   \"""
-                """)).isEqualTo("Expected a record to equal the JSON, but none of the 3 observed records does");
+                """)).startsWith("Expected a record to equal the JSON, but none of the 3 observed records does");
     }
 
     @Test
@@ -244,7 +244,7 @@ class VerificationTest {
                   \"""
                   {"id": 2, "status": "NEW"}
                   \"""
-                """)).isEqualTo("Expected a record to contain the JSON, but none of the 3 observed records does");
+                """)).startsWith("Expected a record to contain the JSON, but none of the 3 observed records does");
     }
 
     @Test
@@ -263,21 +263,21 @@ class VerificationTest {
                   \"""
                   {"customer": {"name": "Ann"}, "lines": [{"sku": "A1"}, {"qty": 6}]}
                   \"""
-                """).error()).isEqualTo(
+                """).error()).startsWith(
                 "Expected the observed record to contain the JSON, but at $.lines[1].qty: expected 6 but was 5");
         assertThat(lastStepOf(order + """
                 Then a record of the fake store "cart" equals the JSON
                   \"""
                   {"id": 20, "customer": {"name": "Ann"}, "lines": [{"sku": "A1", "qty": 2}, {"sku": "B2", "qty": 5}]}
                   \"""
-                """).error()).isEqualTo(
+                """).error()).startsWith(
                 "Expected the observed record to equal the JSON, but at $.customer.age: unexpected field with value 41");
         assertThat(lastStepOf(order + """
                 Then a record of the fake store "cart" contains the JSON
                   \"""
                   {"lines": [{"sku": "A1"}]}
                   \"""
-                """).error()).isEqualTo(
+                """).error()).startsWith(
                 "Expected the observed record to contain the JSON, but at $.lines: expected 1 elements but was 2");
     }
 
@@ -297,7 +297,7 @@ class VerificationTest {
                   \"""
                   {"id": 20, "lines": [{"sku": "A1"}, {"sku": "B2"}]}
                   \"""
-                """).error()).isEqualTo(
+                """).error()).startsWith(
                 "Expected the observed record to equal the JSON, but at $.lines[0].id: unexpected field with value 7");
         assertThat(lastStepOf(order + """
                 Then a record of the fake store "cart" contains the JSON ignoring "$..id"

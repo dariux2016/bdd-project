@@ -16,10 +16,12 @@ final class Verifier {
 
     private final Verification verification;
     private final CurrentStep currentStep;
+    private final Diagnostics diagnostics;
 
-    Verifier(Verification verification, CurrentStep currentStep) {
+    Verifier(Verification verification, CurrentStep currentStep, Diagnostics diagnostics) {
         this.verification = verification;
         this.currentStep = currentStep;
+        this.diagnostics = diagnostics;
     }
 
     /**
@@ -33,19 +35,20 @@ final class Verifier {
     /**
      * @param count the <code>{count}</code> of the step; {@code null} if the phrase has none
      * @param ignored the <code>{ignored}</code> of the step; {@code null} if the phrase has none
+     * @param masked the fields of the records that a failure does not show
      * @param stepArgument the table or doc string of the step; {@code null} if it has neither
      * @throws IllegalArgumentException if the step is not written as the verification requires
      * @throws AssertionError if the records are not as expected
      */
-    void verify(List<?> records, Integer count, String ignored, Object stepArgument) {
+    void verify(List<?> records, Integer count, String ignored, List<JsonPath> masked, Object stepArgument) {
         switch (verification) {
             case EXISTS, NOT_EXISTS, COUNT_EXACTLY, COUNT_AT_LEAST, COUNT_AT_MOST ->
-                    verifyCount(records, count, stepArgument);
-            case JSON_STRICT, JSON_PARTIAL -> verifyJson(records, ignored, stepArgument);
+                    verifyCount(records, count, masked, stepArgument);
+            case JSON_STRICT, JSON_PARTIAL -> verifyJson(records, ignored, masked, stepArgument);
         }
     }
 
-    private void verifyCount(List<?> records, Integer count, Object stepArgument) {
+    private void verifyCount(List<?> records, Integer count, List<JsonPath> masked, Object stepArgument) {
         if (stepArgument instanceof DocString) {
             throw new IllegalArgumentException("This step takes a filter table, not a doc string");
         }
@@ -72,7 +75,7 @@ final class Verifier {
                 case JSON_STRICT, JSON_PARTIAL -> throw new IllegalStateException();
             };
             throw new AssertionError("Expected " + expected + ", but " + matching + " of the " + records.size()
-                    + " observed records match");
+                    + " observed records match\n" + diagnostics.show(records, masked));
         }
     }
 
@@ -80,7 +83,7 @@ final class Verifier {
         return count == 1 ? "record" : "records";
     }
 
-    private void verifyJson(List<?> records, String ignored, Object stepArgument) {
+    private void verifyJson(List<?> records, String ignored, List<JsonPath> masked, Object stepArgument) {
         if (!(stepArgument instanceof DocString docString)) {
             throw new IllegalArgumentException("This step needs the expected JSON as a doc string");
         }
@@ -96,17 +99,25 @@ final class Verifier {
         }
 
         boolean strict = verification == Verification.JSON_STRICT;
-        String difference = null;
         for (Object record : records) {
-            difference = Json.difference(expected, Json.without(record, ignoredPaths), strict);
-            if (difference == null) {
+            if (Json.difference(expected, Json.without(record, ignoredPaths), strict) == null) {
                 return;
             }
         }
         String relation = strict ? "equal" : "contain";
-        throw new AssertionError(records.size() == 1
-                ? "Expected the observed record to " + relation + " the JSON, but " + difference
-                : "Expected a record to " + relation + " the JSON, but none of the " + records.size()
-                        + " observed records does");
+        String summary;
+        if (records.size() == 1) {
+            // The difference quotes the record, so it is found on the record as it is shown; the
+            // expected JSON is masked alike, so that a masked field is not blamed for what hides it.
+            Object shown = Json.mask(records.get(0), masked, Diagnostics.MASK);
+            Object expectedShown = Json.mask(expected, masked, Diagnostics.MASK);
+            String difference = Json.difference(expectedShown, Json.without(shown, ignoredPaths), strict);
+            summary = "Expected the observed record to " + relation + " the JSON, but "
+                    + (difference != null ? diagnostics.clip(difference) : "a masked field differs");
+        } else {
+            summary = "Expected a record to " + relation + " the JSON, but none of the " + records.size()
+                    + " observed records does";
+        }
+        throw new AssertionError(summary + "\n" + diagnostics.show(records, masked));
     }
 }

@@ -43,7 +43,7 @@ class PollingTest {
                 Given the fake store "shop" holds the record '{"status": "NEW"}'
                 Then a record exists in the fake store "shop"
                 """ + PAID).error())
-                .isEqualTo("Expected a matching record, but 0 of the 1 observed records match (after waiting 300 ms)");
+                .startsWith("Expected a matching record, but 0 of the 1 observed records match (after waiting 300 ms)");
         assertThat(elapsed).isGreaterThanOrEqualTo(Duration.ofMillis(300));
     }
 
@@ -55,7 +55,7 @@ class PollingTest {
                 Given the fake store "shop" will hold the record '{"status": "PAID"}' after 5000 ms
                 Then a record exists in the fake store "shop"
                 """).error())
-                .isEqualTo("Expected a matching record, but 0 of the 0 observed records match (after waiting 50 ms)");
+                .startsWith("Expected a matching record, but 0 of the 0 observed records match (after waiting 50 ms)");
     }
 
     @Test
@@ -113,11 +113,11 @@ class PollingTest {
                 """;
 
         assertThat(lastStepOf(delayed + "Then no record exists in the fake store \"shop\"\n" + PAID).error())
-                .isEqualTo("Expected no matching record, but 1 of the 1 observed records match");
+                .startsWith("Expected no matching record, but 1 of the 1 observed records match");
         // The step fails as soon as the record appears, without waiting for the window to end.
         assertThat(elapsed).isLessThan(Duration.ofSeconds(30));
         assertThat(lastStepOf(delayed + "Then at most 0 records exist in the fake store \"shop\"\n").error())
-                .isEqualTo("Expected at most 0 matching records, but 1 of the 1 observed records match");
+                .startsWith("Expected at most 0 matching records, but 1 of the 1 observed records match");
     }
 
     @Test
@@ -130,7 +130,7 @@ class PollingTest {
         assertThat(lastStepOf(delayed + "Then no record exists in the fake store \"shop\"\n").status())
                 .isEqualTo(Status.PASSED);
         assertThat(lastStepOf(delayed + "Then no record exists in the fake store \"shop\" for 5 seconds\n").error())
-                .isEqualTo("Expected no matching record, but 1 of the 1 observed records match");
+                .startsWith("Expected no matching record, but 1 of the 1 observed records match");
     }
 
     @Test
@@ -174,7 +174,7 @@ class PollingTest {
                 """);
 
         assertThat(lastStepOf("Then a record exists in the fake store \"shop\"\n").error())
-                .isEqualTo("Expected a matching record, but 0 of the 0 observed records match");
+                .startsWith("Expected a matching record, but 0 of the 0 observed records match");
     }
 
     @Test
@@ -199,7 +199,7 @@ class PollingTest {
                 """, "Invalid settings.yaml: verification.retries: unknown property; allowed: timeout, pollInterval");
         assertThatSettingsAreRejected("""
                 polling: true
-                """, "Invalid settings.yaml: polling: unknown property; allowed: verification");
+                """, "Invalid settings.yaml: polling: unknown property; allowed: verification, diagnostics");
     }
 
     private void assertThatSettingsAreRejected(String settings, String message) throws IOException {

@@ -40,7 +40,8 @@ public final class Engine {
                 .toList();
         Profile profile = Profile.load(workspace, request.profile(), request.environment(), connectors);
         CurrentStep currentStep = new CurrentStep(workspace);
-        CatalogBackend backend = new CatalogBackend(connectors, profile, Polling.load(workspace), currentStep);
+        CatalogBackend backend = new CatalogBackend(
+                connectors, profile, Polling.load(workspace), Diagnostics.load(workspace), currentStep);
         ResultCollector collector = new ResultCollector(workspace);
 
         RuntimeOptions options = new RuntimeOptionsBuilder()

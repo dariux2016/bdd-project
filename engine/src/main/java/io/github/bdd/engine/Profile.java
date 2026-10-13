@@ -1,5 +1,6 @@
 package io.github.bdd.engine;
 
+import com.jayway.jsonpath.JsonPath;
 import io.github.bdd.plugin.ConfigProperty;
 import io.github.bdd.plugin.ConfigType;
 import io.github.bdd.plugin.Connector;
@@ -7,6 +8,7 @@ import io.github.bdd.plugin.Source;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,11 +32,14 @@ final class Profile {
         this.sources = sources;
     }
 
-    /** @param type the source type, which is that of an installed connector */
-    record ConfiguredSource(Source source, String type, boolean readOnly) {
+    /**
+     * @param type the source type, which is that of an installed connector
+     * @param masked the fields whose values a failure message does not show
+     */
+    record ConfiguredSource(Source source, String type, boolean readOnly, List<JsonPath> masked) {
     }
 
-    private record Declaration(String type, boolean readOnly, Map<String, Object> config) {
+    private record Declaration(String type, boolean readOnly, List<JsonPath> masked, Map<String, Object> config) {
     }
 
     /**
@@ -91,7 +96,7 @@ final class Profile {
 
     private static Declaration declaration(Object source, String path) {
         Map<String, Object> properties = YAML.mapping(source, path);
-        YAML.allowOnly(properties, path, "type", "readOnly", "config");
+        YAML.allowOnly(properties, path, "type", "readOnly", "mask", "config");
         if (!(properties.get("type") instanceof String type) || type.isBlank()) {
             throw YAML.invalid(path + ".type",
                     "expected the type of the source but was " + YamlFile.show(properties.get("type")));
@@ -100,7 +105,30 @@ final class Profile {
         if (!(readOnly instanceof Boolean)) {
             throw YAML.invalid(path + ".readOnly", "expected true or false but was " + YamlFile.show(readOnly));
         }
-        return new Declaration(type, (Boolean) readOnly, YAML.mapping(properties.get("config"), path + ".config"));
+        return new Declaration(type, (Boolean) readOnly, masked(properties.get("mask"), path + ".mask"),
+                YAML.mapping(properties.get("config"), path + ".config"));
+    }
+
+    private static List<JsonPath> masked(Object fields, String path) {
+        if (fields == null) {
+            return List.of();
+        }
+        if (!(fields instanceof List<?> list)) {
+            throw YAML.invalid(path, "expected a list of fields but was " + YamlFile.show(fields));
+        }
+        List<JsonPath> masked = new ArrayList<>();
+        for (int i = 0; i < list.size(); i++) {
+            if (!(list.get(i) instanceof String field) || field.isBlank()) {
+                throw YAML.invalid(path + "[" + i + "]",
+                        "expected a field as a JSONPath but was " + YamlFile.show(list.get(i)));
+            }
+            try {
+                masked.add(Json.path(field.strip()));
+            } catch (IllegalArgumentException e) {
+                throw YAML.invalid(path + "[" + i + "]", e.getMessage());
+            }
+        }
+        return masked;
     }
 
     private static ConfiguredSource configure(String name, Declaration declaration, String path,
@@ -132,7 +160,8 @@ final class Profile {
                         "required by connector '" + connector.sourceType() + "'");
             }
         }
-        return new ConfiguredSource(new Source(name, config), declaration.type(), declaration.readOnly());
+        return new ConfiguredSource(new Source(name, config), declaration.type(), declaration.readOnly(),
+                declaration.masked());
     }
 
     /** Replaces each <code>${NAME}</code> of a text value with the environment variable of that name. */

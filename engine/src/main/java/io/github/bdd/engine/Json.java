@@ -73,6 +73,20 @@ final class Json {
         return copy;
     }
 
+    /** A copy of a JSON with the values at the given paths replaced; paths leading nowhere change nothing. */
+    static Object mask(Object json, List<JsonPath> paths, Object replacement) {
+        Object copy = copy(json);
+        try {
+            for (JsonPath path : paths) {
+                path.set(copy, replacement, PATHS);
+            }
+        } catch (RuntimeException e) {
+            // A path that cannot be set, such as the root, hides everything rather than risk showing it.
+            return replacement;
+        }
+        return copy;
+    }
+
     private static Object copy(Object json) {
         if (json instanceof Map<?, ?> map) {
             Map<Object, Object> copy = new LinkedHashMap<>();

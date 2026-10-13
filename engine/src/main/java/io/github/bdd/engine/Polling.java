@@ -1,6 +1,5 @@
 package io.github.bdd.engine;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
@@ -16,8 +15,7 @@ import java.util.regex.Pattern;
  */
 record Polling(Duration timeout, Duration interval) {
 
-    private static final String FILE = "settings.yaml";
-    private static final YamlFile YAML = new YamlFile(FILE);
+    private static final YamlFile YAML = Settings.YAML;
     private static final Pattern DURATION = Pattern.compile("(\\d+) ?(ms|s)");
 
     private static final Polling DEFAULT = new Polling(Duration.ofSeconds(10), Duration.ofMillis(500));
@@ -37,13 +35,7 @@ record Polling(Duration timeout, Duration interval) {
      * @throws ConfigurationException if the settings are invalid
      */
     static Polling load(Path workspace) {
-        Path file = workspace.resolve(FILE);
-        if (!Files.isRegularFile(file)) {
-            return DEFAULT;
-        }
-        Map<String, Object> root = YAML.mapping(YAML.parse(file), "");
-        YAML.allowOnly(root, "", "verification");
-        Map<String, Object> verification = YAML.mapping(root.get("verification"), "verification");
+        Map<String, Object> verification = Settings.section(workspace, "verification");
         YAML.allowOnly(verification, "verification", "timeout", "pollInterval");
 
         Duration timeout = duration(verification.get("timeout"), "verification.timeout", DEFAULT.timeout());
@@ -105,10 +97,17 @@ record Polling(Duration timeout, Duration interval) {
                     return;
                 }
                 throw timeout.isZero() ? failure : new AssertionError(
-                        failure.getMessage() + " (after waiting " + show(timeout) + ")", failure);
+                        withWaited(failure.getMessage(), timeout), failure);
             }
             sleep(left.compareTo(interval) < 0 ? left : interval);
         }
+    }
+
+    /** The waiting is told on the first line of a message, ahead of the data the failure shows. */
+    private static String withWaited(String message, Duration timeout) {
+        int end = message.indexOf('\n');
+        String waited = " (after waiting " + show(timeout) + ")";
+        return end < 0 ? message + waited : message.substring(0, end) + waited + message.substring(end);
     }
 
     static void sleep(Duration duration) {
