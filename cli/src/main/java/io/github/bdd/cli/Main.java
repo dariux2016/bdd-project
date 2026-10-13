@@ -24,7 +24,12 @@ public final class Main {
     }
 
     public static void main(String[] args) {
-        System.exit(execute(args, System.out, System.err));
+        int code = args.length > 0 && args[0].equals("serve")
+                ? Serve.execute(args, System.out, System.err)
+                : execute(args, System.out, System.err);
+        if (code >= 0) {
+            System.exit(code);
+        }
     }
 
     static int execute(String[] args, PrintStream out, PrintStream err) {

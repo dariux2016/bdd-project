@@ -1,0 +1,34 @@
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; font-size: 14px; }
+body { display: flex; }
+#sidebar { width: 280px; border-right: 1px solid #ccc; display: flex; flex-direction: column; overflow: auto; }
+.toolbar { padding: 6px; display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid #ddd; }
+#tree, #tree ul { list-style: none; margin: 0; padding-left: 14px; }
+#tree { padding: 6px; }
+#tree li > span { display: block; padding: 2px 4px; cursor: pointer; border-radius: 3px; white-space: nowrap; }
+#tree li > span:hover { background: #eef; }
+#tree li > span.selected { background: #cde; }
+#tree .folder > span::before { content: "\1F4C1  "; }
+#tree .file > span::before { content: "\1F4C4  "; }
+main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+header { padding: 6px 10px; border-bottom: 1px solid #ddd; display: flex; gap: 10px; align-items: center; }
+#current { font-weight: 600; flex: 1; }
+#dirty { color: #b60; }
+#conflict { background: #fff3cd; border-bottom: 1px solid #e0c060; padding: 8px 10px; display: flex; gap: 10px; align-items: center; }
+#message { background: #f8d7da; padding: 8px 10px; }
+#editor { position: relative; flex: 1; overflow: hidden; }
+#highlight, #input {
+  position: absolute; inset: 0; margin: 0; padding: 10px; border: 0;
+  font: 13px/1.5 ui-monospace, Consolas, monospace; tab-size: 2;
+  white-space: pre; overflow: auto; letter-spacing: 0;
+}
+#highlight { pointer-events: none; color: #222; overflow: hidden; }
+#input { background: transparent; color: transparent; caret-color: #000; resize: none; outline: none; }
+#input::selection { background: rgba(80, 130, 230, .35); }
+.tok-comment { color: #888; font-style: italic; }
+.tok-tag { color: #a5a; }
+.tok-keyword { color: #06c; font-weight: 600; }
+.tok-step { color: #0a6; font-weight: 600; }
+.tok-string { color: #c50; }
+.tok-table { color: #068; }
+.tok-docstring { color: #c50; }
