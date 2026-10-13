@@ -20,6 +20,9 @@ final class CurrentStep implements EventListener {
     private final URI workspace;
     /** {@code null} between a step and the next. */
     private PickleStepTestStep step;
+    /** Where the inner step of a composite phrase being executed is written; {@code null} if none is. */
+    private String innerLocation;
+    private List<StepResult> inner = List.of();
 
     CurrentStep(Path workspace) {
         this.workspace = workspace.toUri();
@@ -30,6 +33,7 @@ final class CurrentStep implements EventListener {
         publisher.registerHandlerFor(TestStepStarted.class, event -> {
             if (event.getTestStep() instanceof PickleStepTestStep started) {
                 step = started;
+                inner = List.of();
             }
         });
         publisher.registerHandlerFor(TestStepFinished.class, event -> step = null);
@@ -41,10 +45,39 @@ final class CurrentStep implements EventListener {
     }
 
     /**
+     * Declares that the step being executed is an inner step of a composite phrase, written at
+     * {@code location}, so that what is reported about its table cites that instead of the feature.
+     *
+     * @return what to give back to {@link #leaveInner} once the inner step is done
+     */
+    String enterInner(String location) {
+        String outer = innerLocation;
+        innerLocation = location;
+        return outer;
+    }
+
+    void leaveInner(String outer) {
+        innerLocation = outer;
+    }
+
+    /** Records the inner steps of the composite phrase that was just executed, to report with its step. */
+    void expanded(List<StepResult> steps) {
+        inner = List.copyOf(steps);
+    }
+
+    /** The inner steps of the step being executed, or of the one that finished last. */
+    List<StepResult> inner() {
+        return inner;
+    }
+
+    /**
      * @param index the position of a row in the table of the step, starting from zero
      * @return the feature and line of the row, e.g. {@code features/store.feature:12}
      */
     String tableRow(int index) {
+        if (innerLocation != null) {
+            return innerLocation + ", row " + (index + 1);
+        }
         int line = ((DataTableArgument) step.getStep().getArgument()).getLine();
         List<String> lines;
         try {

@@ -5,7 +5,6 @@ import io.cucumber.datatable.DataTable;
 import io.cucumber.docstring.DocString;
 import io.cucumber.core.backend.CucumberInvocationTargetException;
 import io.cucumber.core.backend.ParameterInfo;
-import io.cucumber.core.backend.StepDefinition;
 import io.cucumber.core.backend.TypeResolver;
 import io.github.bdd.engine.Profile.ConfiguredSource;
 import io.github.bdd.plugin.Action;
@@ -31,7 +30,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /** A phrase of the catalog, exposed to Cucumber as a step definition that runs the phrase's action. */
-final class PhraseStepDefinition implements StepDefinition {
+final class PhraseStepDefinition implements CatalogStep {
 
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{(\\w+)}");
     /** The parameters of the verifications, which a phrase uses like those of its action. */
@@ -247,8 +246,8 @@ final class PhraseStepDefinition implements StepDefinition {
         return infos;
     }
 
-    /** The parameters of the phrase, in the order the pattern uses them. */
-    List<Parameter> parameters() {
+    @Override
+    public List<Parameter> parameters() {
         return List.copyOf(parameters);
     }
 
@@ -267,7 +266,7 @@ final class PhraseStepDefinition implements StepDefinition {
         return location;
     }
 
-    private record TypedParameter(Type type) implements ParameterInfo {
+    record TypedParameter(Type type) implements ParameterInfo {
 
         @Override
         public Type getType() {

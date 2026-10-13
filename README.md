@@ -203,6 +203,33 @@ aliases:
 
 Un alias deve usare gli stessi parametri della frase che rappresenta, altrimenti il caricamento fallisce con un errore che li elenca. Due frasi i cui pattern possono corrispondere allo stesso step sono segnalate come ambigue, indicando entrambe e la loro origine, prima di eseguire qualsiasi scenario. `Engine.catalog(workspace)` restituisce il catalogo effettivo: per ogni frase pattern, lingua, origine (`connector:<tipo>`, `engine`, `workspace`), bersaglio (`<tipo>.<azione>`), verifica e parametri.
 
+### Frasi composte
+
+Una frase composta è una frase di business che si espande in una sequenza di frasi esistenti, in `composites` di `catalog.yaml`:
+
+```yaml
+composites:
+  - phrase:                                   # oppure: phrase: "..." con language: it (en di default)
+      en: "the customer {name} has a confirmed order"
+      it: "il cliente {name} ha un ordine confermato"
+    parameters:                               # facoltativo: i parametri sono testi, salvo dichiarazione
+      points: integer
+    steps:
+      - 'the fake store "shop" has {name} set to 1'
+      - step: 'exactly 1 record exists in the fake store "shop"'   # step con tabella...
+        table:
+          - [field, operator, value]
+          - [customer, equals, "{name}"]
+      - step: 'a record of the fake store "shop" contains the JSON'  # ...o con testo multilinea
+        text: '{"customer": "{name}"}'
+```
+
+- Nel testo di uno step interno `{name}` diventa il valore passato, tra virgolette (non per i parametri `integer`); se il segnaposto è già tra virgolette, come in `'{"customer": "{name}"}'`, il valore entra così com'è. In celle di tabella e testi multilinea entra sempre così com'è.
+- Gli step interni possono essere altre frasi composte; le variabili che definiscono restano disponibili al resto dello scenario.
+- Al caricamento sono rifiutati: uno step che nessuna frase del catalogo riconosce, un parametro citato ma non dichiarato dalla frase, un ciclo (diretto o indiretto), con la catena (`A -> B -> A`).
+- Se uno step interno fallisce, la frase composta fallisce e il messaggio indica il numero dello step interno, il suo testo e il motivo; gli step interni successivi risultano `skipped`.
+- Nel report la frase composta è un solo step; `StepResult.inner()` e `scenarios[].steps[].inner` di `summary.json` ne danno il dettaglio. In `Engine.catalog` ha bersaglio `composite` e `steps`.
+
 ## Selezione
 
 Senza opzioni `run` esegue tutte le feature del workspace. Le opzioni restringono la selezione e si combinano (uno scenario gira se è sotto uno dei percorsi **e** soddisfa l'espressione di tag):

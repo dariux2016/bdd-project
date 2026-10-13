@@ -122,6 +122,7 @@ final class Reports {
         summary.put("startedAt", start.toString());
         summary.put("durationMillis", duration.toMillis());
         summary.put("counts", counts);
+        summary.put("scenarios", scenarios);
         summary.put("noScenarioSelected", scenarios.isEmpty());
         summary.put("successful", !scenarios.isEmpty()
                 && scenarios.stream().allMatch(scenario -> scenario.status() == Status.PASSED));
