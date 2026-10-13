@@ -4,6 +4,7 @@ import com.jayway.jsonpath.JsonPath;
 import io.github.bdd.plugin.ConfigProperty;
 import io.github.bdd.plugin.ConfigType;
 import io.github.bdd.plugin.Connector;
+import io.github.bdd.plugin.LocalContainer;
 import io.github.bdd.plugin.Source;
 
 import java.nio.file.Files;
@@ -39,7 +40,8 @@ final class Profile {
     record ConfiguredSource(Source source, String type, boolean readOnly, List<JsonPath> masked) {
     }
 
-    private record Declaration(String type, boolean readOnly, List<JsonPath> masked, Map<String, Object> config) {
+    private record Declaration(String type, String image, boolean readOnly, List<JsonPath> masked,
+            Map<String, Object> config) {
     }
 
     /**
@@ -50,7 +52,8 @@ final class Profile {
      * @param name the requested profile, or {@code null} if none was
      * @throws ConfigurationException if the configuration is invalid or does not fit the request
      */
-    static Profile load(Path workspace, String name, Map<String, String> environment, List<Connector> connectors) {
+    static Profile load(Path workspace, String name, Map<String, String> environment, List<Connector> connectors,
+            LocalContainers containers) {
         Path file = workspace.resolve(FILE);
         if (!Files.isRegularFile(file)) {
             if (name != null) {
@@ -81,7 +84,7 @@ final class Profile {
 
         Map<String, ConfiguredSource> sources = new LinkedHashMap<>();
         declarations.forEach((source, declaration) -> sources.put(source, configure(source, declaration,
-                "profiles." + name + ".sources." + source, environment, connectors)));
+                "profiles." + name + ".sources." + source, environment, connectors, containers)));
         return new Profile(name, sources);
     }
 
@@ -96,7 +99,7 @@ final class Profile {
 
     private static Declaration declaration(Object source, String path) {
         Map<String, Object> properties = YAML.mapping(source, path);
-        YAML.allowOnly(properties, path, "type", "readOnly", "mask", "config");
+        YAML.allowOnly(properties, path, "type", "image", "readOnly", "mask", "config");
         if (!(properties.get("type") instanceof String type) || type.isBlank()) {
             throw YAML.invalid(path + ".type",
                     "expected the type of the source but was " + YamlFile.show(properties.get("type")));
@@ -105,7 +108,13 @@ final class Profile {
         if (!(readOnly instanceof Boolean)) {
             throw YAML.invalid(path + ".readOnly", "expected true or false but was " + YamlFile.show(readOnly));
         }
-        return new Declaration(type, (Boolean) readOnly, masked(properties.get("mask"), path + ".mask"),
+        Object image = properties.get("image");
+        if (image != null && (!(image instanceof String text) || text.isBlank())) {
+            throw YAML.invalid(path + ".image",
+                    "expected the name of a container image but was " + YamlFile.show(image));
+        }
+        return new Declaration(type, image == null ? null : ((String) image).strip(), (Boolean) readOnly,
+                masked(properties.get("mask"), path + ".mask"),
                 YAML.mapping(properties.get("config"), path + ".config"));
     }
 
@@ -132,7 +141,7 @@ final class Profile {
     }
 
     private static ConfiguredSource configure(String name, Declaration declaration, String path,
-            Map<String, String> environment, List<Connector> connectors) {
+            Map<String, String> environment, List<Connector> connectors, LocalContainers containers) {
         Connector connector = connectors.stream()
                 .filter(candidate -> candidate.sourceType().equals(declaration.type()))
                 .findFirst()
@@ -154,6 +163,19 @@ final class Profile {
                 config.put(property, convert(resolve(value, propertyPath, environment), declared.type(), propertyPath));
             }
         });
+        if (declaration.image() != null) {
+            // The address and credentials come from the container, so they are not required of the source.
+            LocalContainer container;
+            try {
+                container = containers.start(connector, declaration.image());
+            } catch (UnsupportedOperationException e) {
+                throw YAML.invalid(path + ".image", e.getMessage());
+            } catch (RuntimeException e) {
+                throw YAML.invalid(path + ".image", "cannot start a container from '" + declaration.image()
+                        + "': " + e.getMessage());
+            }
+            config.putAll(container.config());
+        }
         for (ConfigProperty property : schema) {
             if (property.required() && !config.containsKey(property.name())) {
                 throw YAML.invalid(path + ".config." + property.name(),

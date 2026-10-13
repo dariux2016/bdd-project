@@ -1,0 +1,4 @@
+[
+  {"id": 10, "name": "Grace", "vip": true, "profile": {"tier": "silver", "tags": ["early"]}},
+  {"id": 11, "name": "Alan", "vip": false}
+]

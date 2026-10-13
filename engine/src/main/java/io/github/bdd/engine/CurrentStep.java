@@ -17,11 +17,13 @@ import java.util.List;
 /** Knows the step being executed and where it is in its feature, which Cucumber does not tell a step definition. */
 final class CurrentStep implements EventListener {
 
+    private final Path workspacePath;
     private final URI workspace;
     /** {@code null} between a step and the next. */
     private PickleStepTestStep step;
 
     CurrentStep(Path workspace) {
+        this.workspacePath = workspace;
         this.workspace = workspace.toUri();
     }
 
@@ -33,6 +35,10 @@ final class CurrentStep implements EventListener {
             }
         });
         publisher.registerHandlerFor(TestStepFinished.class, event -> step = null);
+    }
+
+    Path workspace() {
+        return workspacePath;
     }
 
     /** Whether a step is being executed that has neither a table nor a doc string. */

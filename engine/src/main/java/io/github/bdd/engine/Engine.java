@@ -60,7 +60,20 @@ public final class Engine {
         List<Connector> connectors = ServiceLoader.load(Connector.class, classLoader).stream()
                 .map(ServiceLoader.Provider::get)
                 .toList();
-        Profile profile = Profile.load(workspace, request.profile(), request.environment(), connectors);
+        // Containers that last as long as the execution are destroyed however it ends.
+        LocalContainers owned = request.containers() == null ? new LocalContainers() : null;
+        try {
+            return run(request, workspace, connectors, classLoader, owned != null ? owned : request.containers());
+        } finally {
+            if (owned != null) {
+                owned.close();
+            }
+        }
+    }
+
+    private static ExecutionResult run(ExecutionRequest request, Path workspace, List<Connector> connectors,
+            ClassLoader classLoader, LocalContainers containers) {
+        Profile profile = Profile.load(workspace, request.profile(), request.environment(), connectors, containers);
         CurrentStep currentStep = new CurrentStep(workspace);
         Variables variables = new Variables(request.environment());
         Catalog catalog = Catalog.load(workspace, connectors, new Catalog.Context(

@@ -12,12 +12,19 @@ import java.util.Map;
  * @param environment the environment variables that resolve the <code>${NAME}</code> values of the
  *     configuration; not copied, so that the lookup stays case-insensitive where the platform's is
  * @param selection what to execute of the workspace; {@code null} for all of it
+ * @param containers where the containers of the sources that declare an image are started, and
+ *     kept: the caller closes it. {@code null} for containers that last only as long as the execution
  */
 public record ExecutionRequest(Path workspace, String profile, Map<String, String> environment,
-        Selection selection) {
+        Selection selection, LocalContainers containers) {
 
     public ExecutionRequest {
         selection = selection == null ? Selection.ALL : selection;
+    }
+
+    /** A request whose containers last as long as the execution. */
+    public ExecutionRequest(Path workspace, String profile, Map<String, String> environment, Selection selection) {
+        this(workspace, profile, environment, selection, null);
     }
 
     /** A request for the whole workspace. */

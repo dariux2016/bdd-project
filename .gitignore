@@ -27,3 +27,6 @@ Thumbs.db
 
 # Test run output
 runs/
+
+# Reports written by running the example workspaces
+examples/**/reports/

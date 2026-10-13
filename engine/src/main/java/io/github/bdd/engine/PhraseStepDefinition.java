@@ -11,12 +11,17 @@ import io.github.bdd.engine.Profile.ConfiguredSource;
 import io.github.bdd.plugin.Action;
 import io.github.bdd.plugin.ActionKind;
 import io.github.bdd.plugin.Arguments;
+import io.github.bdd.plugin.Document;
 import io.github.bdd.plugin.Parameter;
 import io.github.bdd.plugin.ParameterType;
 import io.github.bdd.plugin.Phrase;
+import io.github.bdd.plugin.StepArgument;
 import io.github.bdd.plugin.Verification;
 
+import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.lang.reflect.Type;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -111,14 +116,14 @@ final class PhraseStepDefinition implements StepDefinition {
 
     private static String expressionType(ParameterType type) {
         return switch (type) {
-            case STRING, SOURCE -> "{string}";
+            case STRING, SOURCE, FILE -> "{string}";
             case INTEGER -> "{" + Catalog.INTEGER_OR_VARIABLE + "}";
         };
     }
 
     private static Type javaType(ParameterType type) {
         return switch (type) {
-            case STRING, SOURCE -> String.class;
+            case STRING, SOURCE, FILE -> String.class;
             case INTEGER -> String.class;
         };
     }
@@ -153,17 +158,19 @@ final class PhraseStepDefinition implements StepDefinition {
                     values.put(parameter.name(), source.source());
                 } else if (parameter.type() == ParameterType.INTEGER) {
                     values.put(parameter.name(), integer(parameter, text));
+                } else if (parameter.type() == ParameterType.FILE) {
+                    values.put(parameter.name(), document(text));
                 } else {
                     values.put(parameter.name(), text);
                 }
             }
-            Arguments arguments = new Arguments(values);
-            if (verifier == null) {
-                action.handler().execute(arguments);
-                return;
-            }
             // The table or doc string of the step, if any, follows the parameters of the phrase.
             Object stepArgument = resolved(args.length > parameters.size() ? args[parameters.size()] : null);
+            if (verifier == null) {
+                action.handler().execute(arguments(values, stepArgument));
+                return;
+            }
+            Arguments arguments = new Arguments(values);
             Integer expectedCount = count;
             String ignoredPaths = ignored;
             String savedField = field;
@@ -174,6 +181,46 @@ final class PhraseStepDefinition implements StepDefinition {
                     verifier.lasting());
         } catch (Exception | AssertionError e) {
             throw new CucumberInvocationTargetException(this, new InvocationTargetException(e));
+        }
+    }
+
+    /** The arguments of an action that takes the table or doc string of the step, if it takes one. */
+    private Arguments arguments(Map<String, Object> values, Object stepArgument) {
+        return switch (action.argument()) {
+            case NONE -> new Arguments(values);
+            case TABLE -> {
+                if (!(stepArgument instanceof DataTable table)) {
+                    throw new IllegalArgumentException("This step needs a table");
+                }
+                // Cucumber reads an empty cell as null.
+                List<List<String>> rows = table.cells().stream()
+                        .map(row -> row.stream().map(cell -> cell == null ? "" : cell).toList())
+                        .toList();
+                yield new Arguments(values, rows, null);
+            }
+            case DOC_STRING -> {
+                if (!(stepArgument instanceof DocString docString)) {
+                    throw new IllegalArgumentException("This step needs a doc string");
+                }
+                yield new Arguments(values, null, docString.getContent());
+            }
+        };
+    }
+
+    /** The file a step names, which must be within the workspace. */
+    private Document document(String name) {
+        Path workspace = currentStep.workspace();
+        Path file = workspace.resolve(name.strip()).normalize();
+        if (!file.startsWith(workspace)) {
+            throw new IllegalArgumentException("File '" + name + "' is not inside the workspace");
+        }
+        if (!Files.isRegularFile(file)) {
+            throw new IllegalArgumentException("File '" + name + "' does not exist in the workspace");
+        }
+        try {
+            return new Document(name.strip(), Files.readString(file));
+        } catch (IOException e) {
+            throw new IllegalArgumentException("File '" + name + "' cannot be read: " + e.getMessage());
         }
     }
 
@@ -240,7 +287,7 @@ final class PhraseStepDefinition implements StepDefinition {
         for (Parameter parameter : parameters) {
             infos.add(new TypedParameter(javaType(parameter.type())));
         }
-        if (verifier != null && !currentStep.lacksArgument()) {
+        if ((verifier != null || action.argument() != StepArgument.NONE) && !currentStep.lacksArgument()) {
             // Typed as Object, the table or doc string arrives as Cucumber read it.
             infos.add(new TypedParameter(Object.class));
         }

@@ -9,7 +9,8 @@ Stato: in costruzione. La specifica è nella issue #1.
 - `plugin-api`: il contratto dei connettori.
 - `engine`: esegue le feature di un workspace con le frasi dei connettori installati.
 - `connector-fake`: connettore finto in memoria, supporto di test del motore.
-- `cli`: punto d'ingresso; `run [workspace] [--profile <nome>] [--path <percorso>]... [--tags <espressione>]` esegue le feature in `<workspace>/features` sulle sorgenti del profilo scelto; `serve [workspace] [--port <n>]` avvia l'interfaccia web (vedi sotto).
+- `connector-postgresql`: connettore PostgreSQL, con container locali (vedi sotto).
+- `cli`: punto d'ingresso, impacchettato come jar eseguibile; `run [workspace] [--profile <nome>] [--path <percorso>]... [--tags <espressione>]` esegue le feature in `<workspace>/features` sulle sorgenti del profilo scelto; `serve [workspace] [--port <n>]` avvia l'interfaccia web (vedi sotto).
 - `server`: API HTTP sulla cartella `features` di un workspace e UI statica, nello stesso artefatto.
 
 ## Interfaccia web (`serve`)
@@ -258,10 +259,77 @@ reports:
   keep: 50
 ```
 
-## Build
+## Contenitori locali
 
-Richiede Java 21 e Maven.
+Una sorgente del profilo può dichiarare `image` al posto dell'indirizzo: lo strumento avvia il container con Testcontainers (serve Docker) e ne usa l'indirizzo e le credenziali. `config` può comunque impostare i parametri che il container non fornisce; quelli che il container fornisce hanno la precedenza.
+
+```yaml
+profiles:
+  local:
+    sources:
+      shop:
+        type: postgresql
+        image: postgres:16-alpine
+```
+
+- Con `run` i container vengono distrutti al termine dell'esecuzione, anche se fallisce. Le sorgenti con lo stesso tipo e la stessa immagine condividono un container.
+- Con `serve` restano attivi finché il server è in esecuzione: chi chiama il motore passa un `LocalContainers` in `ExecutionRequest` e lo chiude allo spegnimento.
+- Un connettore che non sa avviare container (`Connector.startContainer`) fa fallire la configurazione con un errore che cita `profiles.<profilo>.sources.<sorgente>.image`.
+
+## Connettore PostgreSQL
+
+Tipo di sorgente `postgresql`. Parametri: `url` (obbligatorio, `jdbc:postgresql://host:porta/db`), `username`, `password`.
+
+| Frase (inglese) | Frase (italiano) |
+| --- | --- |
+| `the table "t" of the PostgreSQL source "s" is emptied` | `la tabella "t" della sorgente PostgreSQL "s" viene svuotata` |
+| `these rows are inserted in table "t" of the PostgreSQL source "s"` + tabella | `queste righe vengono inserite nella tabella "t" della sorgente PostgreSQL "s"` |
+| `the rows of the file "f" are inserted in table "t" of the PostgreSQL source "s"` | `le righe del file "f" vengono inserite nella tabella "t" della sorgente PostgreSQL "s"` |
+| `the script is executed on the PostgreSQL source "s"` + doc string | `lo script viene eseguito sulla sorgente PostgreSQL "s"` |
+| `the script file "f" is executed on the PostgreSQL source "s"` | `il file di script "f" viene eseguito sulla sorgente PostgreSQL "s"` |
+| `a row exists in table "t" of the PostgreSQL source "s"` | `esiste una riga nella tabella "t" della sorgente PostgreSQL "s"` |
+| `no row exists in table ...`, `exactly\|at least\|at most N rows exist in table ...` | `non esiste alcuna riga nella tabella ...`, `esistono esattamente\|almeno\|al massimo N righe nella tabella ...` |
+| `a row of table ... equals\|contains the JSON [ignoring "..."]` + doc string | `una riga della tabella ... è uguale al\|contiene il JSON [ignorando "..."]` |
+| `I save the "field" of a row of table ... as "variable"` | `salvo "campo" di una riga della tabella ... come "variabile"` |
+| `the query "sql" on the PostgreSQL source "s" returns a row`, `returns no row`, `returns exactly\|at least\|at most N rows` | `la query "sql" sulla sorgente PostgreSQL "s" restituisce una riga`, `non restituisce alcuna riga`, `restituisce esattamente\|almeno\|al massimo N righe` |
+| `a row returned by the query ... equals\|contains the JSON`, `I save the "field" of a row returned by the query ... as "variable"` | `una riga restituita dalla query ... è uguale al\|contiene il JSON`, `salvo "campo" di una riga restituita dalla query ... come "variabile"` |
+
+Le verifiche accettano anche `within N second(s)` / `entro N secondo/secondi` (e `for` / `per` per le assenze), con il polling descritto sopra, e la tabella filtro `field | operator | value`.
+
+- Un nome di tabella può avere lo schema (`public.orders`); nomi di tabelle e colonne si leggono come li legge PostgreSQL senza virgolette, quindi in minuscolo, e ammettono solo lettere, cifre, `_` e `$`.
+- Le righe da tabella Gherkin o da file CSV usano la prima riga come intestazione e una cella vuota è NULL; il server converte il testo al tipo della colonna (numeri, date, booleani, JSON). Un file `.json` è un array di oggetti: i tipi JSON restano tali, `null` è NULL e una chiave assente lascia la colonna al suo valore di default. I percorsi dei file sono relativi al workspace e devono restare al suo interno.
+- `empty` esegue `DELETE FROM` (non `TRUNCATE ... CASCADE`), quindi rispetta le chiavi esterne: si svuotano prima le tabelle che le referenziano.
+- Gli script vengono eseguiti in una sola transazione: se un'istruzione fallisce non resta nulla.
+- Una query nativa gira in una transazione di sola lettura mai confermata, quindi non può modificare i dati nemmeno su una sorgente non `readOnly`.
+- Tutte le azioni di scrittura (svuotare, inserire, script) sono dichiarate `WRITE`: su una sorgente `readOnly` falliscono prima di toccare i dati.
+- Tipi riportati nei record osservati: interi e `numeric`/`double` come numeri, `boolean` come booleano, `date`, `timestamp`, `timestamptz` (in UTC), `time` come testo ISO-8601, `json`/`jsonb` come struttura, array come liste, `bytea` come Base64, il resto come testo.
+
+La cartella `examples/postgresql` è un workspace di esempio (feature in inglese e in italiano, file di dati e script) ed è anche parte dei test.
 
 ```
-mvn test
+run examples/postgresql --profile local
+```
+
+## Distribuzione
+
+L'artefatto è un unico jar eseguibile, `cli/target/bdd-project.jar`, con motore, server e connettori inclusi; `Dockerfile` ne fa un'immagine. I container locali richiedono il socket Docker dell'host.
+
+```
+mvn package -DskipTests
+java -jar cli/target/bdd-project.jar run examples/postgresql --profile local
+
+docker build -t bdd-project .
+docker run --rm -v "$PWD/examples/postgresql:/workspace" -v /var/run/docker.sock:/var/run/docker.sock \
+    bdd-project run /workspace --profile local
+```
+
+Nel contenitore, i container che lo strumento avvia sono fratelli di quello dello strumento: con Docker Desktop su Windows o macOS può servire `TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal`. `serve` ascolta solo su `localhost`, quindi dentro un container non è raggiungibile dall'host.
+
+## Build
+
+Richiede Java 21 e Maven; i test dei connettori con container richiedono Docker e vengono saltati se manca.
+
+```
+mvn test      # unit e integrazione
+mvn verify    # in più: impacchetta il jar e ne esegue il test di fumo (ArtifactSmokeIT)
 ```

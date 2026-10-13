@@ -12,6 +12,7 @@
     <modules>
         <module>plugin-api</module>
         <module>connector-fake</module>
+        <module>connector-postgresql</module>
         <module>engine</module>
         <module>server</module>
         <module>cli</module>
@@ -27,6 +28,8 @@
         <slf4j.version>2.0.17</slf4j.version>
         <junit.version>6.1.3</junit.version>
         <assertj.version>3.27.7</assertj.version>
+        <testcontainers.version>2.0.5</testcontainers.version>
+        <postgresql.version>42.7.13</postgresql.version>
     </properties>
 
     <dependencyManagement>
@@ -43,8 +46,23 @@
             </dependency>
             <dependency>
                 <groupId>io.github.bdd</groupId>
+                <artifactId>connector-postgresql</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.bdd</groupId>
                 <artifactId>engine</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.postgresql</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${postgresql.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-postgresql</artifactId>
+                <version>${testcontainers.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.bdd</groupId>
