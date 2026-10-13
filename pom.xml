@@ -12,6 +12,7 @@
     <modules>
         <module>plugin-api</module>
         <module>connector-fake</module>
+        <module>connector-kafka</module>
         <module>engine</module>
         <module>server</module>
         <module>cli</module>

@@ -4,6 +4,7 @@ import io.cucumber.plugin.EventListener;
 import io.cucumber.plugin.event.DataTableArgument;
 import io.cucumber.plugin.event.EventPublisher;
 import io.cucumber.plugin.event.PickleStepTestStep;
+import io.cucumber.plugin.event.TestCaseStarted;
 import io.cucumber.plugin.event.TestStepFinished;
 import io.cucumber.plugin.event.TestStepStarted;
 
@@ -12,6 +13,7 @@ import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 
 /** Knows the step being executed and where it is in its feature, which Cucumber does not tell a step definition. */
@@ -20,6 +22,7 @@ final class CurrentStep implements EventListener {
     private final URI workspace;
     /** {@code null} between a step and the next. */
     private PickleStepTestStep step;
+    private Instant scenarioStart = Instant.EPOCH;
 
     CurrentStep(Path workspace) {
         this.workspace = workspace.toUri();
@@ -27,12 +30,18 @@ final class CurrentStep implements EventListener {
 
     @Override
     public void setEventPublisher(EventPublisher publisher) {
+        publisher.registerHandlerFor(TestCaseStarted.class, event -> scenarioStart = event.getInstant());
         publisher.registerHandlerFor(TestStepStarted.class, event -> {
             if (event.getTestStep() instanceof PickleStepTestStep started) {
                 step = started;
             }
         });
         publisher.registerHandlerFor(TestStepFinished.class, event -> step = null);
+    }
+
+    /** When the scenario being executed started. */
+    Instant scenarioStart() {
+        return scenarioStart;
     }
 
     /** Whether a step is being executed that has neither a table nor a doc string. */

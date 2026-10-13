@@ -1,0 +1,7 @@
+profiles:
+  local:
+    sources:
+      events:
+        type: kafka
+        config:
+          image: apache/kafka-native:4.2.0

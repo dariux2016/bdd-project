@@ -157,7 +157,7 @@ final class PhraseStepDefinition implements StepDefinition {
                     values.put(parameter.name(), text);
                 }
             }
-            Arguments arguments = new Arguments(values);
+            Arguments arguments = new Arguments(values, currentStep.scenarioStart());
             if (verifier == null) {
                 action.handler().execute(arguments);
                 return;
