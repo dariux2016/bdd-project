@@ -22,7 +22,7 @@ final class Settings {
             return Map.of();
         }
         Map<String, Object> root = YAML.mapping(YAML.parse(file), "");
-        YAML.allowOnly(root, "", "verification", "diagnostics");
+        YAML.allowOnly(root, "", "verification", "diagnostics", "reports");
         return YAML.mapping(root.get(name), name);
     }
 }
