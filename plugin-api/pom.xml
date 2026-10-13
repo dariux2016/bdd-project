@@ -11,4 +11,5 @@
     </parent>
 
     <artifactId>plugin-api</artifactId>
+    <description>The contract of the connectors: the only dependency a connector needs.</description>
 </project>
