@@ -11,6 +11,7 @@ Stato: in costruzione. La specifica è nella issue #1.
 - `connector-fake`: connettore finto in memoria, supporto di test del motore.
 - `connector-postgresql`: connettore PostgreSQL, con container locali (vedi sotto).
 - `cli`: punto d'ingresso, impacchettato come jar eseguibile; `run [workspace] [--profile <nome>] [--path <percorso>]... [--tags <espressione>]` esegue le feature in `<workspace>/features` sulle sorgenti del profilo scelto; `serve [workspace] [--port <n>]` avvia l'interfaccia web (vedi sotto).
+- `connector-mongodb`: connettore per le collection MongoDB (vedi "Connettore MongoDB").
 - `server`: API HTTP sulla cartella `features` di un workspace e UI statica, nello stesso artefatto.
 
 ## Interfaccia web (`serve`)
@@ -262,6 +263,9 @@ reports:
 ## Contenitori locali
 
 Una sorgente del profilo può dichiarare `image` al posto dell'indirizzo: lo strumento avvia il container con Testcontainers (serve Docker) e ne usa l'indirizzo e le credenziali. `config` può comunque impostare i parametri che il container non fornisce; quelli che il container fornisce hanno la precedenza.
+## Connettore MongoDB
+
+Tipo di sorgente `mongodb`. Esempio completo, in italiano e in inglese: `examples/mongodb` (è anche il test del connettore, che richiede Docker).
 
 ```yaml
 profiles:
@@ -324,6 +328,33 @@ docker run --rm -v "$PWD/examples/postgresql:/workspace" -v /var/run/docker.sock
 ```
 
 Nel contenitore, i container che lo strumento avvia sono fratelli di quello dello strumento: con Docker Desktop su Windows o macOS può servire `TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal`. `serve` ascolta solo su `localhost`, quindi dentro un container non è raggiungibile dall'host.
+      orders-db:
+        type: mongodb
+        config:
+          image: mongo:7           # container avviato dallo strumento; in alternativa:
+          # uri: ${MONGODB_URI}    # un MongoDB già in esecuzione
+          database: shop
+```
+
+Con `image` il container parte al primo uso della sorgente e viene fermato alla fine del processo: in `run` a fine esecuzione, in `serve` resta attivo finché il server è acceso. Serve Docker.
+
+Frasi (qui in inglese; ogni frase ha la sua versione italiana):
+
+| Frase | Effetto |
+| --- | --- |
+| `the MongoDB collection "c" of source "s" is emptied` | svuota la collection |
+| `the documents below are inserted in the MongoDB collection "c" of source "s"` + testo multilinea | inserisce un documento o un array di documenti |
+| `the documents of the file "data/orders.json" are inserted in ...` | come sopra, da un file del workspace |
+| `a document exists in the MongoDB collection "c" of source "s"` (+ tabella) | esistenza; anche `no document exists`, `exactly/at least/at most N documents exist`, `... within N second(s)` |
+| `... matching the filter '{"status": "PAID"}'` | gli stessi controlli con un filtro MongoDB nativo al posto della tabella |
+| `a document of the MongoDB collection ... equals / contains the JSON` | confronto JSON, anche con `ignoring` |
+| `I save the "field" of a document of the MongoDB collection ... as "var"` | cattura una variabile; anche con `matching the filter` |
+
+Documenti e filtri sono in MongoDB Extended JSON: `{"$oid": "..."}` per un ObjectId, `{"$date": "2024-03-01T10:00:00Z"}` per una data, `{"$numberDecimal": "19.99"}` per un decimale.
+
+I documenti osservati hanno una forma JSON stabile: ObjectId come testo di 24 cifre esadecimali; date come testo UTC con millisecondi (`2024-03-01T10:00:00.000Z`); Decimal128 come numero con il suo valore esatto (`19.99`); Binary di tipo UUID come testo dell'UUID, gli altri Binary in Base64; ogni altro tipo non numerico come testo.
+
+Le frasi che scrivono sulla sorgente (svuotare, inserire) con `readOnly: true` falliscono senza toccare i dati.
 
 ## Build
 

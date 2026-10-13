@@ -27,6 +27,11 @@
             <artifactId>connector-postgresql</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <dependency>
+            <groupId>io.github.bdd</groupId>
+            <artifactId>connector-mongodb</artifactId>
+            <scope>runtime</scope>
+        </dependency>
         <!-- JSONPath logs through SLF4J, which complains on the console when it finds no provider. -->
         <dependency>
             <groupId>org.slf4j</groupId>

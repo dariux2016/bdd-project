@@ -13,6 +13,7 @@
         <module>plugin-api</module>
         <module>connector-fake</module>
         <module>connector-postgresql</module>
+        <module>connector-mongodb</module>
         <module>engine</module>
         <module>server</module>
         <module>cli</module>
@@ -30,6 +31,7 @@
         <assertj.version>3.27.7</assertj.version>
         <testcontainers.version>2.0.5</testcontainers.version>
         <postgresql.version>42.7.13</postgresql.version>
+        <mongodb-driver.version>5.6.5</mongodb-driver.version>
     </properties>
 
     <dependencyManagement>
@@ -51,6 +53,11 @@
             </dependency>
             <dependency>
                 <groupId>io.github.bdd</groupId>
+                <artifactId>connector-mongodb</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.bdd</groupId>
                 <artifactId>engine</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -63,6 +70,21 @@
                 <groupId>org.testcontainers</groupId>
                 <artifactId>testcontainers-postgresql</artifactId>
                 <version>${testcontainers.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mongodb</groupId>
+                <artifactId>mongodb-driver-sync</artifactId>
+                <version>${mongodb-driver.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers</artifactId>
+                <version>${testcontainers.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-annotations</artifactId>
+                <version>2.21</version>
             </dependency>
             <dependency>
                 <groupId>io.github.bdd</groupId>
