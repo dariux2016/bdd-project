@@ -167,10 +167,10 @@ final class PhraseStepDefinition implements StepDefinition {
             // The table or doc string of the step, if any, follows the parameters of the phrase.
             Object stepArgument = resolved(args.length > parameters.size() ? args[parameters.size()] : null);
             if (verifier == null) {
-                action.handler().execute(arguments(values, stepArgument));
+                action.handler().execute(arguments(values, stepArgument).atScenarioStart(currentStep.scenarioStart()));
                 return;
             }
-            Arguments arguments = new Arguments(values);
+            Arguments arguments = new Arguments(values).atScenarioStart(currentStep.scenarioStart());
             Integer expectedCount = count;
             String ignoredPaths = ignored;
             String savedField = field;

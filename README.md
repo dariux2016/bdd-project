@@ -12,6 +12,7 @@ Stato: in costruzione. La specifica è nella issue #1.
 - `connector-postgresql`: connettore PostgreSQL, con container locali (vedi sotto).
 - `cli`: punto d'ingresso, impacchettato come jar eseguibile; `run [workspace] [--profile <nome>] [--path <percorso>]... [--tags <espressione>]` esegue le feature in `<workspace>/features` sulle sorgenti del profilo scelto; `serve [workspace] [--port <n>]` avvia l'interfaccia web (vedi sotto).
 - `connector-mongodb`: connettore per le collection MongoDB (vedi "Connettore MongoDB").
+- `connector-kafka`: connettore Kafka (JSON e stringa), incluso nell'artefatto della CLI.
 - `connector-http`: connettore per servizi HTTP/REST (sorgenti di tipo `http`), incluso nell'artefatto.
 - `server`: API HTTP sulla cartella `features` di un workspace e UI statica, nello stesso artefatto.
 
@@ -365,6 +366,51 @@ La cartella `examples/postgresql` è un workspace di esempio (feature in inglese
 ```
 run examples/postgresql --profile local
 ```
+
+## Connettore Kafka
+
+Tipo di sorgente `kafka`. Una sorgente indica l'indirizzo di un broker già in esecuzione, oppure l'immagine di un container da avviare (solo uno dei due):
+
+```yaml
+profiles:
+  local:
+    sources:
+      eventi:
+        type: kafka
+        config:
+          image: apache/kafka-native:4.2.0   # container locale, avviato al primo uso
+  staging:
+    sources:
+      eventi:
+        type: kafka
+        readOnly: true                        # pubblicare fallisce senza inviare nulla
+        config:
+          bootstrapServers: kafka.staging:9092
+```
+
+Il container resta attivo finché il processo è in esecuzione: in `serve` per più esecuzioni, in `run` fino alla fine. Servono Docker e le immagini disponibili.
+
+Il payload è un JSON se lo è, altrimenti una stringa; le verifiche operano sempre sulla sua rappresentazione JSON. Si osservano solo i messaggi con timestamp successivo all'inizio dello scenario, anche se la verifica avviene molti step dopo l'azione, quindi scenari consecutivi sullo stesso topic non si vedono a vicenda. Il confronto usa il timestamp impostato dal produttore: l'orologio del sistema che produce non deve discostarsi molto da quello dello strumento.
+
+```gherkin
+When the message '{"id": "${uuid:id}", "status": "NEW"}' with the key "cliente-7" and the headers "source=web, trace=abc" is published to the topic "orders" of the Kafka source "eventi"
+Then a message exists on the topic "orders" of the Kafka source "eventi" within 15 seconds
+  | field  | operator | value |
+  | id     | equals   | ${id} |
+And a Kafka record exists on the topic "orders" of the Kafka source "eventi"
+  | field          | operator | value      |
+  | key            | equals   | cliente-7  |
+  | headers.source | equals   | web        |
+  | partition      | equals   | 0          |
+  | value.id       | equals   | ${id}      |
+And the messages on the topic "orders" of the Kafka source "eventi" arrive in the order of "$.seq": "1, 2, 3"
+```
+
+- Un **messaggio** è il solo payload: i campi sono JSONPath del payload e il confronto con un JSON atteso (`equals the JSON`, `contains the JSON`, con `ignoring "..."`) riguarda il payload. Un **record Kafka** è l'insieme `{topic, partition, offset, timestamp, key, headers, value}`, da usare per key, header e partizione.
+- Per entrambi valgono le verifiche di esistenza, non esistenza, conteggio, confronto JSON e salvataggio in variabile (`I save the "id" of a message on the topic ... as "orderId"`), ognuna con la variante `within N second(s)` (`for N second(s)` per quelle di assenza).
+- Gli header si scrivono come coppie `nome=valore` separate da virgole o come oggetto JSON; la key e gli header sono facoltativi (`with the key`, `with the headers`).
+- L'ordine è relativo: i valori elencati devono comparire nell'ordine dato, con altri messaggi eventualmente in mezzo. I messaggi sono ordinati per timestamp, poi per partizione e offset.
+- Le stesse frasi esistono in italiano (`il messaggio '...' viene pubblicato sul topic "ordini" della sorgente Kafka "eventi"`, `esiste un messaggio sul topic ...`).
 
 ## Distribuzione
 

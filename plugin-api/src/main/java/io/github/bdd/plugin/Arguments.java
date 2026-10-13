@@ -1,5 +1,6 @@
 package io.github.bdd.plugin;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -9,6 +10,7 @@ public final class Arguments {
     private final Map<String, Object> values;
     private final List<List<String>> table;
     private final String text;
+    private Instant scenarioStart = Instant.EPOCH;
 
     public Arguments(Map<String, Object> values) {
         this(values, null, null);
@@ -22,6 +24,21 @@ public final class Arguments {
         this.values = Map.copyOf(values);
         this.table = table;
         this.text = text;
+    }
+
+    /** Gives these arguments the instant their scenario started; the engine does it for every step. */
+    public Arguments atScenarioStart(Instant scenarioStart) {
+        this.scenarioStart = scenarioStart;
+        return this;
+    }
+
+    /**
+     * When the scenario of the step started, or the epoch if it is not known. A connector whose
+     * source keeps what happened before the scenario, such as a message log, uses it to observe
+     * only what the scenario caused.
+     */
+    public Instant scenarioStart() {
+        return scenarioStart;
     }
 
     public String string(String name) {

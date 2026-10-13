@@ -15,6 +15,7 @@
         <module>connector-postgresql</module>
         <module>connector-mongodb</module>
         <module>connector-http</module>
+        <module>connector-kafka</module>
         <module>engine</module>
         <module>server</module>
         <module>cli</module>
@@ -60,6 +61,11 @@
             <dependency>
                 <groupId>io.github.bdd</groupId>
                 <artifactId>connector-http</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.bdd</groupId>
+                <artifactId>connector-kafka</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
