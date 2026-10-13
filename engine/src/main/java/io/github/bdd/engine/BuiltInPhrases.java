@@ -38,7 +38,7 @@ final class BuiltInPhrases implements Connector {
     public List<Phrase> defaultPhrases() {
         return List.of(
                 new Phrase("I wait {seconds} second(s)", "wait"),
-                new Phrase("attendo {seconds} secondo/secondi", "wait"));
+                new Phrase("attendo {seconds} secondo/secondi", "wait", null, Phrase.ITALIAN));
     }
 
     /** For the rare cases the polling of the verifications does not cover. */

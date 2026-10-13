@@ -1,6 +1,8 @@
 package io.github.bdd.engine;
 
 import com.jayway.jsonpath.JsonPath;
+import io.cucumber.datatable.DataTable;
+import io.cucumber.docstring.DocString;
 import io.cucumber.core.backend.CucumberInvocationTargetException;
 import io.cucumber.core.backend.ParameterInfo;
 import io.cucumber.core.backend.StepDefinition;
@@ -36,6 +38,8 @@ final class PhraseStepDefinition implements StepDefinition {
     private static final Parameter COUNT = new Parameter("count", ParameterType.INTEGER);
     private static final Parameter IGNORED = new Parameter("ignored", ParameterType.STRING);
     private static final Parameter TIMEOUT = new Parameter("timeout", ParameterType.INTEGER);
+    private static final Parameter FIELD = new Parameter("field", ParameterType.STRING);
+    private static final Parameter VARIABLE = new Parameter("variable", ParameterType.STRING);
 
     private final String location;
     private final String sourceType;
@@ -45,19 +49,21 @@ final class PhraseStepDefinition implements StepDefinition {
     private final Verifier verifier;
     private final Polling polling;
     private final CurrentStep currentStep;
+    private final Variables variables;
     private final String expression;
     /** The parameters of the action and of the verification in the order they appear in the phrase. */
     private final List<Parameter> parameters = new ArrayList<>();
 
     PhraseStepDefinition(String sourceType, Phrase phrase, Action action, Profile profile, Polling polling,
-            Diagnostics diagnostics, CurrentStep currentStep) {
+            Diagnostics diagnostics, CurrentStep currentStep, Variables variables) {
         this.location = "phrase '" + phrase.pattern() + "' of connector '" + sourceType + "'";
         this.sourceType = sourceType;
         this.profile = profile;
         this.action = action;
-        this.verifier = phrase.verification() == null ? null : new Verifier(phrase.verification(), currentStep, diagnostics);
+        this.verifier = phrase.verification() == null ? null : new Verifier(phrase.verification(), currentStep, diagnostics, variables);
         this.polling = polling;
         this.currentStep = currentStep;
+        this.variables = variables;
         if (verifier != null && action.kind() == ActionKind.WRITE) {
             // A verification repeats its action, which a write cannot be.
             throw new IllegalStateException("The " + location + " has a verification, so its action '"
@@ -67,12 +73,13 @@ final class PhraseStepDefinition implements StepDefinition {
         Map<String, Parameter> byName = action.parameters().stream()
                 .collect(Collectors.toMap(Parameter::name, Function.identity()));
         Set<Parameter> required = new HashSet<>(byName.values());
+        int byAction = required.size();
         for (Parameter own : verificationParameters(phrase.verification())) {
             if (byName.put(own.name(), own) != null) {
                 throw new IllegalStateException("The " + location + " has a verification, so its action '"
                         + action.name() + "' cannot have a parameter named '" + own.name() + "'");
             }
-            if (own == COUNT) {
+            if (own == COUNT || own == FIELD || own == VARIABLE) {
                 required.add(own);
             }
         }
@@ -88,7 +95,7 @@ final class PhraseStepDefinition implements StepDefinition {
         if (new HashSet<>(parameters).size() != parameters.size() || !parameters.containsAll(required)) {
             throw new IllegalStateException("The " + location + " must use every parameter of action '"
                     + action.name() + "' exactly once"
-                    + (required.contains(COUNT) ? ", and {count} for its verification" : ""));
+                    + (required.size() > byAction ? ", and the parameters of its verification" : ""));
         }
     }
 
@@ -98,20 +105,21 @@ final class PhraseStepDefinition implements StepDefinition {
             case EXISTS, NOT_EXISTS -> List.of(TIMEOUT);
             case COUNT_EXACTLY, COUNT_AT_LEAST, COUNT_AT_MOST -> List.of(COUNT, TIMEOUT);
             case JSON_STRICT, JSON_PARTIAL -> List.of(IGNORED, TIMEOUT);
+            case SAVE -> List.of(FIELD, VARIABLE, TIMEOUT);
         };
     }
 
     private static String expressionType(ParameterType type) {
         return switch (type) {
             case STRING, SOURCE -> "{string}";
-            case INTEGER -> "{int}";
+            case INTEGER -> "{" + Catalog.INTEGER_OR_VARIABLE + "}";
         };
     }
 
     private static Type javaType(ParameterType type) {
         return switch (type) {
             case STRING, SOURCE -> String.class;
-            case INTEGER -> Integer.class;
+            case INTEGER -> String.class;
         };
     }
 
@@ -122,23 +130,31 @@ final class PhraseStepDefinition implements StepDefinition {
             List<JsonPath> masked = new ArrayList<>();
             Integer count = null;
             String ignored = null;
+            String field = null;
+            String variable = null;
             Integer timeout = null;
             for (int i = 0; i < parameters.size(); i++) {
                 Parameter parameter = parameters.get(i);
+                // The text of the step may cite variables: they are resolved before it is used.
+                String text = variables.resolve((String) args[i]);
                 if (parameter == COUNT) {
-                    count = (Integer) args[i];
+                    count = integer(parameter, text);
                 } else if (parameter == IGNORED) {
-                    ignored = (String) args[i];
+                    ignored = text;
+                } else if (parameter == FIELD) {
+                    field = text;
+                } else if (parameter == VARIABLE) {
+                    variable = (String) args[i];
                 } else if (parameter == TIMEOUT) {
-                    timeout = (Integer) args[i];
+                    timeout = integer(parameter, text);
+                } else if (parameter.type() == ParameterType.SOURCE) {
+                    ConfiguredSource source = source(text);
+                    masked.addAll(source.masked());
+                    values.put(parameter.name(), source.source());
+                } else if (parameter.type() == ParameterType.INTEGER) {
+                    values.put(parameter.name(), integer(parameter, text));
                 } else {
-                    if (parameter.type() == ParameterType.SOURCE) {
-                        ConfiguredSource source = source((String) args[i]);
-                        masked.addAll(source.masked());
-                        values.put(parameter.name(), source.source());
-                    } else {
-                        values.put(parameter.name(), args[i]);
-                    }
+                    values.put(parameter.name(), text);
                 }
             }
             Arguments arguments = new Arguments(values);
@@ -147,16 +163,43 @@ final class PhraseStepDefinition implements StepDefinition {
                 return;
             }
             // The table or doc string of the step, if any, follows the parameters of the phrase.
-            Object stepArgument = args.length > parameters.size() ? args[parameters.size()] : null;
+            Object stepArgument = resolved(args.length > parameters.size() ? args[parameters.size()] : null);
             Integer expectedCount = count;
             String ignoredPaths = ignored;
+            String savedField = field;
+            String savedVariable = variable;
             polling(timeout).run(
-                    () -> verifier.verify(
-                            action.handler().execute(arguments), expectedCount, ignoredPaths, masked, stepArgument),
+                    () -> verifier.verify(action.handler().execute(arguments), expectedCount, ignoredPaths,
+                            savedField, savedVariable, masked, stepArgument),
                     verifier.lasting());
         } catch (Exception | AssertionError e) {
             throw new CucumberInvocationTargetException(this, new InvocationTargetException(e));
         }
+    }
+
+    private static Integer integer(Parameter parameter, String text) {
+        try {
+            return Integer.valueOf(text.strip());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "Expected an integer for {" + parameter.name() + "} but was '" + text + "'");
+        }
+    }
+
+    /** The table or doc string of a step with the variables it cites replaced by their values. */
+    private Object resolved(Object stepArgument) {
+        if (stepArgument instanceof DocString docString && Variables.cites(docString.getContent())) {
+            return DocString.create(variables.resolve(docString.getContent()), docString.getContentType());
+        }
+        if (stepArgument instanceof DataTable table
+                && table.cells().stream().flatMap(List::stream).anyMatch(Variables::cites)) {
+            List<List<String>> cells = new ArrayList<>();
+            for (List<String> row : table.cells()) {
+                cells.add(row.stream().map(variables::resolve).collect(Collectors.toList()));
+            }
+            return DataTable.create(cells);
+        }
+        return stepArgument;
     }
 
     /** @param timeout the <code>{timeout}</code> of the step, in seconds; {@code null} if the phrase has none */
@@ -202,6 +245,11 @@ final class PhraseStepDefinition implements StepDefinition {
             infos.add(new TypedParameter(Object.class));
         }
         return infos;
+    }
+
+    /** The parameters of the phrase, in the order the pattern uses them. */
+    List<Parameter> parameters() {
+        return List.copyOf(parameters);
     }
 
     @Override

@@ -69,6 +69,12 @@ public final class FakeConnector implements Connector {
 
     @Override
     public List<Phrase> defaultPhrases() {
+        List<Phrase> phrases = new ArrayList<>(english());
+        phrases.addAll(italian());
+        return phrases;
+    }
+
+    private static List<Phrase> english() {
         return List.of(
                 new Phrase("the fake store {source} has {key} set to {value}", "put"),
                 new Phrase("{amount} is added to {key} in the fake store {source}", "add"),
@@ -94,7 +100,48 @@ public final class FakeConnector implements Connector {
                 new Phrase("a record of the fake store {source} contains the JSON", "records",
                         Verification.JSON_PARTIAL),
                 new Phrase("a record of the fake store {source} contains the JSON ignoring {ignored}", "records",
-                        Verification.JSON_PARTIAL));
+                        Verification.JSON_PARTIAL),
+                new Phrase("I save the {field} of a record of the fake store {source} as {variable}", "records",
+                        Verification.SAVE),
+                new Phrase("I save the {field} of a record of the fake store {source} as {variable} within "
+                        + "{timeout} second(s)", "records", Verification.SAVE));
+    }
+
+    private static List<Phrase> italian() {
+        return List.of(
+                italian("lo store finto {source} ha {key} impostato a {value}", "put", null),
+                italian("{amount} viene aggiunto a {key} nello store finto {source}", "add", null),
+                italian("lo store finto {source} deve avere {key} uguale a {value}", "expect", null),
+                italian("lo store finto {source} contiene il record {json}", "insert", null),
+                italian("lo store finto {source} conterrà il record {json} dopo {delay} ms", "insertLater", null),
+                italian("esiste un record nello store finto {source}", "records", Verification.EXISTS),
+                italian("esiste un record nello store finto {source} entro {timeout} secondo/secondi", "records",
+                        Verification.EXISTS),
+                italian("non esiste alcun record nello store finto {source}", "records", Verification.NOT_EXISTS),
+                italian("non esiste alcun record nello store finto {source} per {timeout} secondo/secondi",
+                        "records", Verification.NOT_EXISTS),
+                italian("esistono esattamente {count} record nello store finto {source}", "records",
+                        Verification.COUNT_EXACTLY),
+                italian("esistono almeno {count} record nello store finto {source}", "records",
+                        Verification.COUNT_AT_LEAST),
+                italian("esistono al massimo {count} record nello store finto {source}", "records",
+                        Verification.COUNT_AT_MOST),
+                italian("un record dello store finto {source} è uguale al JSON", "records",
+                        Verification.JSON_STRICT),
+                italian("un record dello store finto {source} è uguale al JSON ignorando {ignored}", "records",
+                        Verification.JSON_STRICT),
+                italian("un record dello store finto {source} contiene il JSON", "records",
+                        Verification.JSON_PARTIAL),
+                italian("un record dello store finto {source} contiene il JSON ignorando {ignored}", "records",
+                        Verification.JSON_PARTIAL),
+                italian("salvo {field} di un record dello store finto {source} come {variable}", "records",
+                        Verification.SAVE),
+                italian("salvo {field} di un record dello store finto {source} come {variable} entro "
+                        + "{timeout} secondo/secondi", "records", Verification.SAVE));
+    }
+
+    private static Phrase italian(String pattern, String action, Verification verification) {
+        return new Phrase(pattern, action, verification, Phrase.ITALIAN);
     }
 
     private List<?> put(Arguments arguments) {

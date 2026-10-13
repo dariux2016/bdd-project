@@ -34,5 +34,12 @@ public enum Verification {
      * matter. Arrays must still match element by element. The phrase may use <code>{ignored}</code>
      * as for {@link #JSON_STRICT}.
      */
-    JSON_PARTIAL
+    JSON_PARTIAL,
+    /**
+     * Saves a field of the first record that satisfies the filter in a variable of the scenario, for
+     * the steps that follow. The phrase must use <code>{field}</code>, a JSONPath, and
+     * <code>{variable}</code>, the name of the variable. It is repeated like the other checks until
+     * a record has the field.
+     */
+    SAVE
 }

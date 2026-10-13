@@ -17,11 +17,13 @@ final class Verifier {
     private final Verification verification;
     private final CurrentStep currentStep;
     private final Diagnostics diagnostics;
+    private final Variables variables;
 
-    Verifier(Verification verification, CurrentStep currentStep, Diagnostics diagnostics) {
+    Verifier(Verification verification, CurrentStep currentStep, Diagnostics diagnostics, Variables variables) {
         this.verification = verification;
         this.currentStep = currentStep;
         this.diagnostics = diagnostics;
+        this.variables = variables;
     }
 
     /**
@@ -35,26 +37,62 @@ final class Verifier {
     /**
      * @param count the <code>{count}</code> of the step; {@code null} if the phrase has none
      * @param ignored the <code>{ignored}</code> of the step; {@code null} if the phrase has none
+     * @param field the <code>{field}</code> of the step, a JSONPath; {@code null} if the phrase has none
+     * @param variable the <code>{variable}</code> of the step; {@code null} if the phrase has none
      * @param masked the fields of the records that a failure does not show
      * @param stepArgument the table or doc string of the step; {@code null} if it has neither
      * @throws IllegalArgumentException if the step is not written as the verification requires
      * @throws AssertionError if the records are not as expected
      */
-    void verify(List<?> records, Integer count, String ignored, List<JsonPath> masked, Object stepArgument) {
+    void verify(List<?> records, Integer count, String ignored, String field, String variable,
+            List<JsonPath> masked, Object stepArgument) {
         switch (verification) {
             case EXISTS, NOT_EXISTS, COUNT_EXACTLY, COUNT_AT_LEAST, COUNT_AT_MOST ->
                     verifyCount(records, count, masked, stepArgument);
             case JSON_STRICT, JSON_PARTIAL -> verifyJson(records, ignored, masked, stepArgument);
+            case SAVE -> save(records, field, variable, masked, stepArgument);
         }
     }
 
-    private void verifyCount(List<?> records, Integer count, List<JsonPath> masked, Object stepArgument) {
+    private Filter filter(Object stepArgument) {
         if (stepArgument instanceof DocString) {
             throw new IllegalArgumentException("This step takes a filter table, not a doc string");
         }
-        Filter filter = stepArgument instanceof DataTable table
+        return stepArgument instanceof DataTable table
                 ? Filter.parse(table.cells(), currentStep::tableRow)
                 : Filter.NONE;
+    }
+
+    /** Saves the field of the first record satisfying the filter, once there is one that has it. */
+    private void save(List<?> records, String field, String variable, List<JsonPath> masked, Object stepArgument) {
+        Filter filter = filter(stepArgument);
+        JsonPath path = Json.path(field.strip());
+        // Refused before looking at the records, so that it is not retried.
+        Variables.requireName(variable);
+        for (Object record : records) {
+            if (filter.matches(record)) {
+                Object value = Json.read(record, path);
+                if (value == null) {
+                    throw new AssertionError("Expected the first matching record to have '" + field.strip()
+                            + "' to save as '" + variable + "', but it has none\n" + diagnostics.show(records, masked));
+                }
+                variables.save(variable, text(value));
+                return;
+            }
+        }
+        throw new AssertionError("Expected a matching record to save '" + field.strip() + "' from, but 0 of the "
+                + records.size() + " observed records match\n" + diagnostics.show(records, masked));
+    }
+
+    private static String text(Object value) {
+        if (value instanceof Number number) {
+            return Json.decimal(number).stripTrailingZeros().toPlainString();
+        }
+        return value instanceof String || value instanceof Boolean ? value.toString() : Json.write(value);
+    }
+
+    private void verifyCount(List<?> records, Integer count, List<JsonPath> masked, Object stepArgument) {
+        Filter filter = filter(stepArgument);
         long matching = records.stream().filter(filter::matches).count();
 
         boolean verified = switch (verification) {
@@ -63,7 +101,7 @@ final class Verifier {
             case COUNT_EXACTLY -> matching == count;
             case COUNT_AT_LEAST -> matching >= count;
             case COUNT_AT_MOST -> matching <= count;
-            case JSON_STRICT, JSON_PARTIAL -> throw new IllegalStateException();
+            case JSON_STRICT, JSON_PARTIAL, SAVE -> throw new IllegalStateException();
         };
         if (!verified) {
             String expected = switch (verification) {
@@ -72,7 +110,7 @@ final class Verifier {
                 case COUNT_EXACTLY -> "exactly " + count + " matching " + noun(count);
                 case COUNT_AT_LEAST -> "at least " + count + " matching " + noun(count);
                 case COUNT_AT_MOST -> "at most " + count + " matching " + noun(count);
-                case JSON_STRICT, JSON_PARTIAL -> throw new IllegalStateException();
+                case JSON_STRICT, JSON_PARTIAL, SAVE -> throw new IllegalStateException();
             };
             throw new AssertionError("Expected " + expected + ", but " + matching + " of the " + records.size()
                     + " observed records match\n" + diagnostics.show(records, masked));

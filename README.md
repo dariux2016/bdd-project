@@ -141,6 +141,54 @@ profiles:
 
 Il mascheramento riguarda ciò che si mostra: i filtri e i confronti JSON vedono i valori reali.
 
+## Variabili e generatori
+
+Un valore noto solo durante l'esecuzione, come un id generato dal sistema, si salva in una variabile e si riusa come `${nome}` nel testo degli step, nelle tabelle e nei testi multilinea. Le variabili valgono solo nello scenario che le definisce; citarne una non definita fa fallire lo step con un errore che la nomina.
+
+```gherkin
+When I save the "id" of a record of the fake store "ordini" as "orderId"
+  | field  | operator | value |
+  | status | equals   | NEW   |
+Then a record exists in the fake store "pagamenti" within 30 seconds
+  | field   | operator | value      |
+  | orderId | equals   | ${orderId} |
+```
+
+La frase di salvataggio legge il campo (un JSONPath) del primo record che soddisfa il filtro, e riprova come le altre verifiche finché il record c'è. In italiano: `salvo "id" di un record dello store finto "ordini" come "orderId"`. Anche i parametri numerici accettano una variabile (`exactly ${n} records exist ...`).
+
+| Riferimento | Valore |
+| --- | --- |
+| `${nome}` | la variabile dello scenario |
+| `${env:NOME}` | la variabile d'ambiente, con sintassi distinta dalle variabili di scenario |
+| `${uuid:nome}` | un UUID |
+| `${now:nome}`, `${now+1d:nome}` | l'istante corrente (ISO-8601), con offset opzionale in `ms`, `s`, `m`, `h`, `d` (`+1d`, `-2h`) |
+| `${random:nome}` | un numero casuale intero non negativo |
+
+Un generatore ha un nome: riusato con lo stesso nome nello scenario dà lo stesso valore (che è anche la variabile `${nome}`), mentre un altro scenario ne ottiene uno diverso.
+
+## Catalogo delle frasi
+
+Le frasi sono dati. Il catalogo effettivo è l'unione delle frasi di default dei connettori (ognuna in italiano e in inglese, che portano alla stessa azione), di quelle del motore e degli alias del workspace. Una feature con `# language: it` usa le keyword Gherkin italiane e le frasi italiane:
+
+```gherkin
+# language: it
+Funzionalità: Store
+  Scenario: Contatori
+    Dato lo store finto "s" ha "k" impostato a 3
+    Allora lo store finto "s" deve avere "k" uguale a 3
+```
+
+Gli alias, cioè nuove formulazioni di una frase esistente, stanno in `<workspace>/catalog.yaml`, caricato all'avvio:
+
+```yaml
+aliases:
+  - phrase: "{key} of the fake store {source} is {value}"   # la nuova formulazione
+    for: "the fake store {source} has {key} set to {value}"  # la frase di default che rappresenta
+    language: en                                             # facoltativo, en di default
+```
+
+Un alias deve usare gli stessi parametri della frase che rappresenta, altrimenti il caricamento fallisce con un errore che li elenca. Due frasi i cui pattern possono corrispondere allo stesso step sono segnalate come ambigue, indicando entrambe e la loro origine, prima di eseguire qualsiasi scenario. `Engine.catalog(workspace)` restituisce il catalogo effettivo: per ogni frase pattern, lingua, origine (`connector:<tipo>`, `engine`, `workspace`), bersaglio (`<tipo>.<azione>`), verifica e parametri.
+
 ## Build
 
 Richiede Java 21 e Maven.
