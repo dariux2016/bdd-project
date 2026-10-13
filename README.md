@@ -6,7 +6,7 @@ Stato: in costruzione. La specifica è nella issue #1.
 
 ## Moduli
 
-- `plugin-api`: il contratto dei connettori.
+- `plugin-api`: il contratto dei connettori, pubblicato come artefatto a sé (`io.github.bdd:plugin-api`); vedi [plugin-api/README.md](plugin-api/README.md) per scrivere un connettore.
 - `engine`: esegue le feature di un workspace con le frasi dei connettori installati.
 - `connector-fake`: connettore finto in memoria, supporto di test del motore.
 - `connector-postgresql`: connettore PostgreSQL, con container locali (vedi sotto).
@@ -28,6 +28,14 @@ Avvia un server in ascolto solo su `localhost`. La UI mostra l'albero di `<works
 - Le API rifiutano (HTTP 400) i percorsi che escono da `features`: `..`, percorsi assoluti e link simbolici verso l'esterno.
 - API: `GET /api/tree`, `GET|PUT|POST /api/file?path=`, `POST /api/folder?path=`, `POST /api/rename` (`{from, to}`), `DELETE /api/entry?path=`; i percorsi sono relativi a `features`.
 - Scelta sul frontend: JavaScript vanilla (nessun node, nessun download) in `server/src/main/resources/static`, con un evidenziatore Gherkin scritto a mano sovrapposto a una `textarea`. La "build" del frontend è lo step standard di Maven resources, che impacchetta la UI nel jar; `mvn test` funziona offline.
+
+## Connettori esterni
+
+Un jar depositato in `<workspace>/plugins/` è caricato a ogni esecuzione (e a ogni lettura del catalogo): i `Connector` che dichiara in `META-INF/services/io.github.bdd.plugin.Connector` sono scoperti con `ServiceLoader` e si usano in `sources.yaml` e nelle feature come quelli inclusi.
+
+- Ogni jar ha un class loader proprio che vede solo `io.github.bdd.plugin.*` e il JDK: un plugin porta con sé le proprie dipendenze (fat jar) e non confligge con quelle dello strumento né di altri plugin.
+- Due connettori con lo stesso tipo di sorgente (anche uno incluso e uno esterno) sono un errore di configurazione che li nomina entrambi.
+- Un jar che non si carica produce un errore che ne cita il nome.
 
 ## Sorgenti e profili
 

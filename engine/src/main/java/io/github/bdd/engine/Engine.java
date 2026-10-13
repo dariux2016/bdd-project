@@ -13,7 +13,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.ServiceLoader;
 import java.util.UUID;
 
 /** The single entry point of the engine. */
@@ -26,16 +25,17 @@ public final class Engine {
      * The effective catalog of a workspace: the default phrases of the installed connectors, those of
      * the engine, and the aliases of the workspace's {@code catalog.yaml}.
      *
-     * @throws ConfigurationException if the catalog file is invalid, an alias does not fit the phrase
+     * @throws ConfigurationException if a jar of the {@code plugins} folder cannot be loaded, two
+     *     connectors handle the same source type, the catalog file is invalid, an alias does not fit the phrase
      *     it stands for, or two phrases can match the same step
      * @throws IllegalStateException if an installed connector declares an invalid phrase
      */
     public static List<CatalogEntry> catalog(Path workspace) {
         ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-        List<Connector> connectors = ServiceLoader.load(Connector.class, classLoader).stream()
-                .map(ServiceLoader.Provider::get)
-                .toList();
-        return Catalog.load(workspace.toAbsolutePath().normalize(), connectors, Catalog.Context.NONE).entries();
+        try (Plugins plugins = Plugins.load(workspace.toAbsolutePath().normalize(), classLoader)) {
+            return Catalog.load(workspace.toAbsolutePath().normalize(), plugins.connectors(), Catalog.Context.NONE)
+                    .entries();
+        }
     }
 
     /**
@@ -44,26 +44,24 @@ public final class Engine {
      *
      * @throws IllegalArgumentException if the workspace has no {@code features} directory, or the
      *     selection names a path that does not exist or an invalid tag expression
-     * @throws ConfigurationException if the configuration of the sources is invalid, lacks the
+     * @throws ConfigurationException if a jar of the {@code plugins} folder cannot be loaded, two
+     *     connectors handle the same source type, the configuration of the sources is invalid, lacks the
      *     requested profile or uses a source type no installed connector handles, or if the settings
      *     of the workspace are invalid
      * @throws IllegalStateException if an installed connector declares an invalid phrase
      */
     public static ExecutionResult run(ExecutionRequest request) {
         Path workspace = request.workspace().toAbsolutePath().normalize();
-        Path features = workspace.resolve("features");
-        if (!Files.isDirectory(features)) {
+        if (!Files.isDirectory(workspace.resolve("features"))) {
             throw new IllegalArgumentException("No 'features' directory in workspace " + workspace);
         }
 
         ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-        List<Connector> connectors = ServiceLoader.load(Connector.class, classLoader).stream()
-                .map(ServiceLoader.Provider::get)
-                .toList();
         // Containers that last as long as the execution are destroyed however it ends.
         LocalContainers owned = request.containers() == null ? new LocalContainers() : null;
-        try {
-            return run(request, workspace, connectors, classLoader, owned != null ? owned : request.containers());
+        try (Plugins plugins = Plugins.load(workspace, classLoader)) {
+            return run(request, workspace, plugins.connectors(), classLoader,
+                    owned != null ? owned : request.containers());
         } finally {
             if (owned != null) {
                 owned.close();
