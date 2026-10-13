@@ -7,5 +7,7 @@ public enum StepArgument {
     /** The step must have a data table; the action receives its rows, header row included. */
     TABLE,
     /** The step must have a doc string; the action receives its content. */
-    DOC_STRING
+    DOC_STRING,
+    /** The step may have a data table, a doc string or neither; the action reads whichever there is. */
+    OPTIONAL
 }

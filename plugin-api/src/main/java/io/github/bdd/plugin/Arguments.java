@@ -56,6 +56,16 @@ public final class Arguments {
         return text;
     }
 
+    /** The rows of the data table of the step, if it has one. */
+    public java.util.Optional<List<List<String>>> optionalTable() {
+        return java.util.Optional.ofNullable(table);
+    }
+
+    /** The content of the doc string of the step, if it has one. */
+    public java.util.Optional<String> optionalText() {
+        return java.util.Optional.ofNullable(text);
+    }
+
     private Object value(String name) {
         Object value = values.get(name);
         if (value == null) {

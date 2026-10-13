@@ -12,6 +12,7 @@ Stato: in costruzione. La specifica è nella issue #1.
 - `connector-postgresql`: connettore PostgreSQL, con container locali (vedi sotto).
 - `cli`: punto d'ingresso, impacchettato come jar eseguibile; `run [workspace] [--profile <nome>] [--path <percorso>]... [--tags <espressione>]` esegue le feature in `<workspace>/features` sulle sorgenti del profilo scelto; `serve [workspace] [--port <n>]` avvia l'interfaccia web (vedi sotto).
 - `connector-mongodb`: connettore per le collection MongoDB (vedi "Connettore MongoDB").
+- `connector-http`: connettore per servizi HTTP/REST (sorgenti di tipo `http`), incluso nell'artefatto.
 - `server`: API HTTP sulla cartella `features` di un workspace e UI statica, nello stesso artefatto.
 
 ## Interfaccia web (`serve`)
@@ -204,6 +205,57 @@ aliases:
 ```
 
 Un alias deve usare gli stessi parametri della frase che rappresenta, altrimenti il caricamento fallisce con un errore che li elenca. Due frasi i cui pattern possono corrispondere allo stesso step sono segnalate come ambigue, indicando entrambe e la loro origine, prima di eseguire qualsiasi scenario. `Engine.catalog(workspace)` restituisce il catalogo effettivo: per ogni frase pattern, lingua, origine (`connector:<tipo>`, `engine`, `workspace`), bersaglio (`<tipo>.<azione>`), verifica e parametri.
+
+## Connettore HTTP
+
+Una sorgente di tipo `http` rappresenta un servizio. Il connettore è incluso nell'artefatto.
+
+```yaml
+profiles:
+  staging:
+    sources:
+      api:
+        type: http
+        # readOnly: true   blocca POST, PUT, PATCH e DELETE; GET resta consentito
+        config:
+          baseUrl: https://staging.example.com/api
+          authorization: Bearer ${API_TOKEN}   # segreto da variabile d'ambiente
+          headers: |                            # un "Nome: valore" per riga, inviati a ogni richiesta
+            X-Client: bdd
+          connectTimeout: 5                     # secondi, 10 di default
+          responseTimeout: 20                   # secondi, 30 di default
+```
+
+Frasi (in inglese; ogni frase ha la sua voce in italiano, vedi `Engine.catalog`):
+
+```gherkin
+Given the next request to the HTTP service "api" has the header "X-Tenant" set to "acme"
+And the next request to the HTTP service "api" has the query parameter "page" set to "2"
+When I send a POST request to "/orders" on the HTTP service "api"
+  """
+  {"item": "book", "quantity": 2}
+  """
+And I save the "body.id" of the last response of the HTTP service "api" as "orderId"
+Then the last response of the HTTP service "api" satisfies the conditions
+  | field                | operator | value            |
+  | status               | equals   | 201              |
+  | headers.content-type | contains | application/json |
+And the body of the last response of the HTTP service "api" contains the JSON
+  """
+  {"item": "book"}
+  """
+When I call GET "/orders/${orderId}" on the HTTP service "api" until the response satisfies the conditions within 30 seconds
+  | field       | operator | value |
+  | body.status | equals   | SHIPPED |
+```
+
+- Metodi: GET, POST, PUT, PATCH, DELETE (`I send a <METODO> request to "<percorso>" on the HTTP service "<sorgente>"`). Il percorso può contenere la query string. Una tabella `name | value` sotto la frase dà gli header della richiesta, un doc string ne dà il corpo (JSON o testo; il `Content-Type` è dedotto se non indicato).
+- Header e parametri di query impostati da una frase `the next request ... has ...` valgono per la richiesta di invio successiva (in aggiunta o in sostituzione di quelli della sorgente); `I call GET ... until` li usa senza consumarli.
+- L'ultima risposta di ogni sorgente è il record `{status, headers, body}`: i nomi degli header sono in minuscolo e il corpo è il JSON letto, o il testo se non è JSON. Le verifiche usano quindi gli stessi campi (`status`, `headers.content-type`, `body.items[0].id`), gli stessi operatori e le stesse attese delle altre sorgenti. Le verifiche sul corpo (`equals`/`contains the JSON`) confrontano il solo corpo.
+- Le verifiche sull'ultima risposta riprovano come tutte le altre fino al timeout del workspace: per un esito immediato aggiungere `within 0 seconds`.
+- `I call GET ... until the response satisfies the conditions` ripete la chiamata fino a soddisfare la tabella o allo scadere del timeout (quello del workspace, o `within N seconds`), e un errore di rete non viene ripetuto.
+- Se il servizio non accetta la connessione o non risponde entro i timeout della sorgente lo step fallisce indicando indirizzo e timeout scaduto.
+- L'ultima risposta è conservata per sorgente per tutta l'esecuzione: non viene azzerata tra gli scenari.
 
 ## Selezione
 

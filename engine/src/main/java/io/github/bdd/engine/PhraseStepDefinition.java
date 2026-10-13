@@ -192,11 +192,7 @@ final class PhraseStepDefinition implements StepDefinition {
                 if (!(stepArgument instanceof DataTable table)) {
                     throw new IllegalArgumentException("This step needs a table");
                 }
-                // Cucumber reads an empty cell as null.
-                List<List<String>> rows = table.cells().stream()
-                        .map(row -> row.stream().map(cell -> cell == null ? "" : cell).toList())
-                        .toList();
-                yield new Arguments(values, rows, null);
+                yield new Arguments(values, rows(table), null);
             }
             case DOC_STRING -> {
                 if (!(stepArgument instanceof DocString docString)) {
@@ -204,7 +200,23 @@ final class PhraseStepDefinition implements StepDefinition {
                 }
                 yield new Arguments(values, null, docString.getContent());
             }
+            case OPTIONAL -> {
+                if (stepArgument instanceof DataTable table) {
+                    yield new Arguments(values, rows(table), null);
+                }
+                if (stepArgument instanceof DocString docString) {
+                    yield new Arguments(values, null, docString.getContent());
+                }
+                yield new Arguments(values);
+            }
         };
+    }
+
+    /** The rows of a table; Cucumber reads an empty cell as null. */
+    private static List<List<String>> rows(DataTable table) {
+        return table.cells().stream()
+                .map(row -> row.stream().map(cell -> cell == null ? "" : cell).toList())
+                .toList();
     }
 
     /** The file a step names, which must be within the workspace. */
