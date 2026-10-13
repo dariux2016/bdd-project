@@ -51,6 +51,8 @@ final class PhraseStepDefinition implements StepDefinition {
     private final CurrentStep currentStep;
     private final Variables variables;
     private final String expression;
+    /** The parameter given as the doc string of the step; {@code null} if the action has none. */
+    private final Parameter docParameter;
     /** The parameters of the action and of the verification in the order they appear in the phrase. */
     private final List<Parameter> parameters = new ArrayList<>();
 
@@ -70,9 +72,25 @@ final class PhraseStepDefinition implements StepDefinition {
                     + action.name() + "' must only read");
         }
 
+        List<Parameter> texts = action.parameters().stream()
+                .filter(parameter -> parameter.type() == ParameterType.TEXT)
+                .toList();
+        if (texts.size() > 1) {
+            throw new IllegalStateException("The action '" + action.name() + "' of " + location
+                    + " has more than one TEXT parameter, but a step has only one doc string");
+        }
+        if (!texts.isEmpty() && verifier != null) {
+            throw new IllegalStateException("The " + location + " has a verification, which takes the doc string "
+                    + "of the step as its expected JSON, so its action '" + action.name()
+                    + "' cannot have the TEXT parameter '" + texts.getFirst().name() + "'");
+        }
+        this.docParameter = texts.isEmpty() ? null : texts.getFirst();
+
         Map<String, Parameter> byName = action.parameters().stream()
                 .collect(Collectors.toMap(Parameter::name, Function.identity()));
         Set<Parameter> required = new HashSet<>(byName.values());
+        // The doc string is not written in the phrase, so the phrase does not have to use it.
+        required.remove(docParameter);
         int byAction = required.size();
         for (Parameter own : verificationParameters(phrase.verification())) {
             if (byName.put(own.name(), own) != null) {
@@ -85,6 +103,10 @@ final class PhraseStepDefinition implements StepDefinition {
         }
         this.expression = PLACEHOLDER.matcher(phrase.pattern()).replaceAll(match -> {
             Parameter parameter = byName.get(match.group(1));
+            if (parameter != null && parameter == docParameter) {
+                throw new IllegalStateException("The " + location + " uses '" + match.group(1)
+                        + "', which is given as the doc string of the step, so the phrase must not mention it");
+            }
             if (parameter == null) {
                 throw new IllegalStateException("The " + location + " uses '" + match.group(1)
                         + "', which is not a parameter of action '" + action.name() + "'");
@@ -111,15 +133,16 @@ final class PhraseStepDefinition implements StepDefinition {
 
     private static String expressionType(ParameterType type) {
         return switch (type) {
-            case STRING, SOURCE -> "{string}";
+            case STRING, SOURCE, FILE -> "{string}";
             case INTEGER -> "{" + Catalog.INTEGER_OR_VARIABLE + "}";
+            case TEXT -> throw new IllegalArgumentException("A TEXT parameter is not written in the pattern");
         };
     }
 
     private static Type javaType(ParameterType type) {
         return switch (type) {
-            case STRING, SOURCE -> String.class;
-            case INTEGER -> String.class;
+            case STRING, SOURCE, FILE, INTEGER -> String.class;
+            case TEXT -> throw new IllegalArgumentException("A TEXT parameter is not written in the pattern");
         };
     }
 
@@ -151,19 +174,28 @@ final class PhraseStepDefinition implements StepDefinition {
                     ConfiguredSource source = source(text);
                     masked.addAll(source.masked());
                     values.put(parameter.name(), source.source());
+                } else if (parameter.type() == ParameterType.FILE) {
+                    values.put(parameter.name(), currentStep.readFile(text));
                 } else if (parameter.type() == ParameterType.INTEGER) {
                     values.put(parameter.name(), integer(parameter, text));
                 } else {
                     values.put(parameter.name(), text);
                 }
             }
+            // The table or doc string of the step, if any, follows the parameters of the phrase.
+            Object stepArgument = resolved(args.length > parameters.size() ? args[parameters.size()] : null);
+            if (docParameter != null) {
+                if (!(stepArgument instanceof DocString docString)) {
+                    throw new IllegalArgumentException("This step needs a doc string, which gives {"
+                            + docParameter.name() + "}");
+                }
+                values.put(docParameter.name(), docString.getContent());
+            }
             Arguments arguments = new Arguments(values);
             if (verifier == null) {
                 action.handler().execute(arguments);
                 return;
             }
-            // The table or doc string of the step, if any, follows the parameters of the phrase.
-            Object stepArgument = resolved(args.length > parameters.size() ? args[parameters.size()] : null);
             Integer expectedCount = count;
             String ignoredPaths = ignored;
             String savedField = field;
@@ -240,7 +272,7 @@ final class PhraseStepDefinition implements StepDefinition {
         for (Parameter parameter : parameters) {
             infos.add(new TypedParameter(javaType(parameter.type())));
         }
-        if (verifier != null && !currentStep.lacksArgument()) {
+        if ((verifier != null || docParameter != null) && !currentStep.lacksArgument()) {
             // Typed as Object, the table or doc string arrives as Cucumber read it.
             infos.add(new TypedParameter(Object.class));
         }

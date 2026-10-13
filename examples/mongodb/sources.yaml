@@ -1,0 +1,19 @@
+profiles:
+  # A MongoDB started by the tool from an image, and stopped when the process ends.
+  local:
+    sources:
+      orders-db:
+        type: mongodb
+        config:
+          image: mongo:7
+          database: shop
+
+  # A MongoDB that is already running; the connection string comes from the environment.
+  staging:
+    sources:
+      orders-db:
+        type: mongodb
+        readOnly: true
+        config:
+          uri: ${MONGODB_URI}
+          database: shop

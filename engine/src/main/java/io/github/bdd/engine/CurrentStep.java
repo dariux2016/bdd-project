@@ -11,18 +11,40 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.List;
 
 /** Knows the step being executed and where it is in its feature, which Cucumber does not tell a step definition. */
 final class CurrentStep implements EventListener {
 
+    private final Path root;
     private final URI workspace;
     /** {@code null} between a step and the next. */
     private PickleStepTestStep step;
 
     CurrentStep(Path workspace) {
+        this.root = workspace;
         this.workspace = workspace.toUri();
+    }
+
+    /**
+     * @param path a file of the workspace, as a step gives it: relative to the workspace
+     * @return the content of the file, read as UTF-8
+     * @throws IllegalArgumentException if the path leaves the workspace or names no file
+     */
+    String readFile(String path) {
+        Path file = root.resolve(path).normalize();
+        if (!file.startsWith(root)) {
+            throw new IllegalArgumentException("The file '" + path + "' is outside the workspace");
+        }
+        try {
+            return Files.readString(file);
+        } catch (NoSuchFileException e) {
+            throw new IllegalArgumentException("The file '" + path + "' does not exist in the workspace");
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     @Override
