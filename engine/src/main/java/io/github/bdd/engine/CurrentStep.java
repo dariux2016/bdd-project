@@ -21,8 +21,20 @@ final class CurrentStep implements EventListener {
     /** {@code null} between a step and the next. */
     private PickleStepTestStep step;
 
-    CurrentStep(Path workspace) {
+    private final Cancellation cancellation;
+
+    CurrentStep(Path workspace, Cancellation cancellation) {
         this.workspace = workspace.toUri();
+        this.cancellation = cancellation;
+    }
+
+    /** @throws IllegalStateException if the execution was cancelled */
+    void beginExecution() {
+        cancellation.enterStep();
+    }
+
+    void endExecution() {
+        cancellation.leaveStep();
     }
 
     @Override

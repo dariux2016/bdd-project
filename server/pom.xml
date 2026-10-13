@@ -23,6 +23,16 @@
         </dependency>
 
         <dependency>
+            <groupId>io.github.bdd</groupId>
+            <artifactId>engine</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.github.bdd</groupId>
+            <artifactId>connector-fake</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>

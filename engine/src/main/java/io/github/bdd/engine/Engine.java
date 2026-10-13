@@ -50,6 +50,16 @@ public final class Engine {
      * @throws IllegalStateException if an installed connector declares an invalid phrase
      */
     public static ExecutionResult run(ExecutionRequest request) {
+        return run(request, new ExecutionListener() { }, new Cancellation());
+    }
+
+    /**
+     * Like {@link #run(ExecutionRequest)}, telling the listener how the execution advances and
+     * stopping when the cancellation is requested. The exceptions are thrown before the listener is
+     * told that the execution started.
+     */
+    public static ExecutionResult run(ExecutionRequest request, ExecutionListener listener,
+            Cancellation cancellation) {
         Path workspace = request.workspace().toAbsolutePath().normalize();
         Path features = workspace.resolve("features");
         if (!Files.isDirectory(features)) {
@@ -61,12 +71,12 @@ public final class Engine {
                 .map(ServiceLoader.Provider::get)
                 .toList();
         Profile profile = Profile.load(workspace, request.profile(), request.environment(), connectors);
-        CurrentStep currentStep = new CurrentStep(workspace);
+        CurrentStep currentStep = new CurrentStep(workspace, cancellation);
         Variables variables = new Variables(request.environment());
         Catalog catalog = Catalog.load(workspace, connectors, new Catalog.Context(
                 profile, Polling.load(workspace), Diagnostics.load(workspace), currentStep, variables));
         CatalogBackend backend = new CatalogBackend(catalog);
-        ResultCollector collector = new ResultCollector(workspace);
+        ResultCollector collector = new ResultCollector(workspace, listener);
 
         Selection selection = request.selection();
         RuntimeOptionsBuilder builder = new RuntimeOptionsBuilder();

@@ -126,6 +126,7 @@ final class PhraseStepDefinition implements StepDefinition {
     @Override
     public void execute(Object[] args) {
         try {
+            currentStep.beginExecution();
             Map<String, Object> values = new HashMap<>();
             List<JsonPath> masked = new ArrayList<>();
             Integer count = null;
@@ -174,6 +175,8 @@ final class PhraseStepDefinition implements StepDefinition {
                     verifier.lasting());
         } catch (Exception | AssertionError e) {
             throw new CucumberInvocationTargetException(this, new InvocationTargetException(e));
+        } finally {
+            currentStep.endExecution();
         }
     }
 
