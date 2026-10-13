@@ -21,7 +21,8 @@ import java.util.Map;
 
 /**
  * In-memory stores, one per source, standing in for real sources in tests. A store holds integers
- * by key and, separately, a list of JSON records.
+ * by key and, separately, a list of JSON records. A record may be made to appear after a delay, as
+ * the data of an asynchronous system does.
  */
 public final class FakeConnector implements Connector {
 
@@ -32,8 +33,12 @@ public final class FakeConnector implements Connector {
     private static final String DEFAULT = "default";
 
     private final Map<String, Map<String, Integer>> stores = new HashMap<>();
-    private final Map<String, List<Object>> records = new HashMap<>();
+    private final Map<String, List<StoredRecord>> records = new HashMap<>();
     private final ObjectMapper json = new ObjectMapper();
+
+    /** @param visibleAt the {@link System#nanoTime()} from which the store shows the record */
+    private record StoredRecord(Object json, long visibleAt) {
+    }
 
     @Override
     public String sourceType() {
@@ -56,6 +61,9 @@ public final class FakeConnector implements Connector {
                         List.of(SOURCE, KEY, new Parameter("value", ParameterType.INTEGER)), this::expect),
                 new Action("insert", ActionKind.WRITE,
                         List.of(SOURCE, new Parameter("json", ParameterType.STRING)), this::insert),
+                new Action("insertLater", ActionKind.WRITE,
+                        List.of(SOURCE, new Parameter("json", ParameterType.STRING),
+                                new Parameter("delay", ParameterType.INTEGER)), this::insertLater),
                 new Action("records", ActionKind.READ, List.of(SOURCE), this::records));
     }
 
@@ -66,8 +74,13 @@ public final class FakeConnector implements Connector {
                 new Phrase("{amount} is added to {key} in the fake store {source}", "add"),
                 new Phrase("the fake store {source} should have {key} equal to {value}", "expect"),
                 new Phrase("the fake store {source} holds the record {json}", "insert"),
+                new Phrase("the fake store {source} will hold the record {json} after {delay} ms", "insertLater"),
                 new Phrase("a record exists in the fake store {source}", "records", Verification.EXISTS),
+                new Phrase("a record exists in the fake store {source} within {timeout} second(s)", "records",
+                        Verification.EXISTS),
                 new Phrase("no record exists in the fake store {source}", "records", Verification.NOT_EXISTS),
+                new Phrase("no record exists in the fake store {source} for {timeout} second(s)", "records",
+                        Verification.NOT_EXISTS),
                 new Phrase("exactly {count} record(s) exist(s) in the fake store {source}", "records",
                         Verification.COUNT_EXACTLY),
                 new Phrase("at least {count} record(s) exist(s) in the fake store {source}", "records",
@@ -109,11 +122,28 @@ public final class FakeConnector implements Connector {
     }
 
     private List<?> insert(Arguments arguments) throws JsonProcessingException {
-        records(arguments).add(json.readValue(arguments.string("json"), Object.class));
+        return insert(arguments, 0);
+    }
+
+    private List<?> insertLater(Arguments arguments) throws JsonProcessingException {
+        return insert(arguments, arguments.integer("delay"));
+    }
+
+    private List<?> insert(Arguments arguments, int delayMillis) throws JsonProcessingException {
+        stored(arguments).add(new StoredRecord(json.readValue(arguments.string("json"), Object.class),
+                System.nanoTime() + delayMillis * 1_000_000L));
         return List.of();
     }
 
-    private List<Object> records(Arguments arguments) {
+    private List<?> records(Arguments arguments) {
+        long now = System.nanoTime();
+        return stored(arguments).stream()
+                .filter(record -> record.visibleAt() - now <= 0)
+                .map(StoredRecord::json)
+                .toList();
+    }
+
+    private List<StoredRecord> stored(Arguments arguments) {
         return records.computeIfAbsent(arguments.source("source").name(), name -> new ArrayList<>());
     }
 

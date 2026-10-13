@@ -4,8 +4,9 @@ import java.nio.file.Path;
 import java.util.Map;
 
 /**
- * @param workspace directory holding the features to execute, under {@code features/}, and the
- *     configuration of the sources, in {@code sources.yaml}
+ * @param workspace directory holding the features to execute, under {@code features/}, the
+ *     configuration of the sources, in {@code sources.yaml}, and optionally the settings of the
+ *     execution, in {@code settings.yaml}
  * @param profile the profile of {@code sources.yaml} whose sources the features act on;
  *     {@code null} only for a workspace without {@code sources.yaml}
  * @param environment the environment variables that resolve the <code>${NAME}</code> values of the

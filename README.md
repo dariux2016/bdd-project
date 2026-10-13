@@ -76,7 +76,33 @@ Then a record of the fake store "ordini" equals the JSON ignoring "id, createdAt
   """
 ```
 
-Le frasi qui sopra sono quelle del connettore finto. Ogni connettore dichiara le proprie, indicando per ciascuna l'azione di lettura e la verifica che il motore applica ai record restituiti.
+### Attese
+
+I sistemi sotto test sono asincroni: un dato può comparire qualche secondo dopo l'azione che lo produce. Ogni verifica rilegge la sorgente e riprova finché non è soddisfatta o scade il timeout, senza attese scritte nella feature; allo scadere fallisce con i dati dell'ultima lettura.
+
+Le verifiche che un dato in arrivo può solo smentire, cioè la non esistenza e "al massimo N", si comportano al contrario: attendono l'intera finestra e falliscono appena il dato compare.
+
+Timeout e intervallo di polling di default sono 10 secondi e 500 millisecondi. Si cambiano in `<workspace>/settings.yaml`, con durate in `s` o `ms`; `timeout: 0ms` fa un solo tentativo.
+
+```yaml
+verification:
+  timeout: 30s
+  pollInterval: 200ms
+```
+
+Una frase può indicare un timeout diverso, in secondi, e per i rari casi in cui il polling non basta esiste un'attesa esplicita (`I wait N seconds`, `attendo N secondi`), disponibile con qualsiasi connettore:
+
+```gherkin
+When I wait 2 seconds
+Then a record exists in the fake store "ordini" within 30 seconds
+  | field  | operator | value |
+  | status | equals   | PAID  |
+And no record exists in the fake store "ordini" for 5 seconds
+  | field  | operator | value     |
+  | status | equals   | CANCELLED |
+```
+
+Le frasi qui sopra sono quelle del connettore finto. Ogni connettore dichiara le proprie, indicando per ciascuna l'azione di lettura, la verifica che il motore applica ai record restituiti e, se vuole, il parametro `{timeout}`.
 
 ## Build
 

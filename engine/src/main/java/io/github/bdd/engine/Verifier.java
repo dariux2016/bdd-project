@@ -23,6 +23,14 @@ final class Verifier {
     }
 
     /**
+     * Whether the verification must hold for as long as it is retried, instead of being retried
+     * until it holds: nothing that appears later can satisfy it, only break it.
+     */
+    boolean lasting() {
+        return verification == Verification.NOT_EXISTS || verification == Verification.COUNT_AT_MOST;
+    }
+
+    /**
      * @param count the <code>{count}</code> of the step; {@code null} if the phrase has none
      * @param ignored the <code>{ignored}</code> of the step; {@code null} if the phrase has none
      * @param stepArgument the table or doc string of the step; {@code null} if it has neither

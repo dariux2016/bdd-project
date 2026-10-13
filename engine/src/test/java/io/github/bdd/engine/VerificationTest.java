@@ -358,6 +358,11 @@ class VerificationTest {
                       cart:
                         type: fake
                 """);
+        // The records are there from the start: a verification that fails need not be retried.
+        Files.writeString(workspace.resolve("settings.yaml"), """
+                verification:
+                  timeout: 0ms
+                """);
         Path file = workspace.resolve("features/orders.feature");
         Files.createDirectories(file.getParent());
         Files.writeString(file, "Feature: Orders\n  Scenario: Orders\n" + (ORDERS + steps).indent(4));

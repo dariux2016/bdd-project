@@ -16,6 +16,7 @@ import io.github.bdd.plugin.Verification;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Type;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -34,6 +35,7 @@ final class PhraseStepDefinition implements StepDefinition {
     /** The parameters of the verifications, which a phrase uses like those of its action. */
     private static final Parameter COUNT = new Parameter("count", ParameterType.INTEGER);
     private static final Parameter IGNORED = new Parameter("ignored", ParameterType.STRING);
+    private static final Parameter TIMEOUT = new Parameter("timeout", ParameterType.INTEGER);
 
     private final String location;
     private final String sourceType;
@@ -41,18 +43,26 @@ final class PhraseStepDefinition implements StepDefinition {
     private final Action action;
     /** {@code null} for a phrase that only performs its action. */
     private final Verifier verifier;
+    private final Polling polling;
     private final CurrentStep currentStep;
     private final String expression;
     /** The parameters of the action and of the verification in the order they appear in the phrase. */
     private final List<Parameter> parameters = new ArrayList<>();
 
-    PhraseStepDefinition(String sourceType, Phrase phrase, Action action, Profile profile, CurrentStep currentStep) {
+    PhraseStepDefinition(String sourceType, Phrase phrase, Action action, Profile profile, Polling polling,
+            CurrentStep currentStep) {
         this.location = "phrase '" + phrase.pattern() + "' of connector '" + sourceType + "'";
         this.sourceType = sourceType;
         this.profile = profile;
         this.action = action;
         this.verifier = phrase.verification() == null ? null : new Verifier(phrase.verification(), currentStep);
+        this.polling = polling;
         this.currentStep = currentStep;
+        if (verifier != null && action.kind() == ActionKind.WRITE) {
+            // A verification repeats its action, which a write cannot be.
+            throw new IllegalStateException("The " + location + " has a verification, so its action '"
+                    + action.name() + "' must only read");
+        }
 
         Map<String, Parameter> byName = action.parameters().stream()
                 .collect(Collectors.toMap(Parameter::name, Function.identity()));
@@ -85,9 +95,9 @@ final class PhraseStepDefinition implements StepDefinition {
     private static List<Parameter> verificationParameters(Verification verification) {
         return switch (verification) {
             case null -> List.of();
-            case EXISTS, NOT_EXISTS -> List.of();
-            case COUNT_EXACTLY, COUNT_AT_LEAST, COUNT_AT_MOST -> List.of(COUNT);
-            case JSON_STRICT, JSON_PARTIAL -> List.of(IGNORED);
+            case EXISTS, NOT_EXISTS -> List.of(TIMEOUT);
+            case COUNT_EXACTLY, COUNT_AT_LEAST, COUNT_AT_MOST -> List.of(COUNT, TIMEOUT);
+            case JSON_STRICT, JSON_PARTIAL -> List.of(IGNORED, TIMEOUT);
         };
     }
 
@@ -111,26 +121,48 @@ final class PhraseStepDefinition implements StepDefinition {
             Map<String, Object> values = new HashMap<>();
             Integer count = null;
             String ignored = null;
+            Integer timeout = null;
             for (int i = 0; i < parameters.size(); i++) {
                 Parameter parameter = parameters.get(i);
                 if (parameter == COUNT) {
                     count = (Integer) args[i];
                 } else if (parameter == IGNORED) {
                     ignored = (String) args[i];
+                } else if (parameter == TIMEOUT) {
+                    timeout = (Integer) args[i];
                 } else {
                     values.put(parameter.name(),
                             parameter.type() == ParameterType.SOURCE ? source((String) args[i]) : args[i]);
                 }
             }
-            List<?> records = action.handler().execute(new Arguments(values));
-            if (verifier != null) {
-                // The table or doc string of the step, if any, follows the parameters of the phrase.
-                verifier.verify(records, count, ignored,
-                        args.length > parameters.size() ? args[parameters.size()] : null);
+            Arguments arguments = new Arguments(values);
+            if (verifier == null) {
+                action.handler().execute(arguments);
+                return;
             }
+            // The table or doc string of the step, if any, follows the parameters of the phrase.
+            Object stepArgument = args.length > parameters.size() ? args[parameters.size()] : null;
+            Integer expectedCount = count;
+            String ignoredPaths = ignored;
+            polling(timeout).run(
+                    () -> verifier.verify(
+                            action.handler().execute(arguments), expectedCount, ignoredPaths, stepArgument),
+                    verifier.lasting());
         } catch (Exception | AssertionError e) {
             throw new CucumberInvocationTargetException(this, new InvocationTargetException(e));
         }
+    }
+
+    /** @param timeout the <code>{timeout}</code> of the step, in seconds; {@code null} if the phrase has none */
+    private Polling polling(Integer timeout) {
+        if (timeout == null) {
+            return polling;
+        }
+        if (timeout < 0) {
+            throw new IllegalArgumentException(
+                    "The timeout of a step cannot be negative, but was " + timeout + " seconds");
+        }
+        return polling.within(Duration.ofSeconds(timeout));
     }
 
     /** The source a step cites, provided the action may run on it. */

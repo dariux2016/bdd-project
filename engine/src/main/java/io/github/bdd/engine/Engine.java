@@ -23,7 +23,8 @@ public final class Engine {
      *
      * @throws IllegalArgumentException if the workspace has no {@code features} directory
      * @throws ConfigurationException if the configuration of the sources is invalid, lacks the
-     *     requested profile or uses a source type no installed connector handles
+     *     requested profile or uses a source type no installed connector handles, or if the settings
+     *     of the workspace are invalid
      * @throws IllegalStateException if an installed connector declares an invalid phrase
      */
     public static ExecutionResult run(ExecutionRequest request) {
@@ -39,7 +40,7 @@ public final class Engine {
                 .toList();
         Profile profile = Profile.load(workspace, request.profile(), request.environment(), connectors);
         CurrentStep currentStep = new CurrentStep(workspace);
-        CatalogBackend backend = new CatalogBackend(connectors, profile, currentStep);
+        CatalogBackend backend = new CatalogBackend(connectors, profile, Polling.load(workspace), currentStep);
         ResultCollector collector = new ResultCollector(workspace);
 
         RuntimeOptions options = new RuntimeOptionsBuilder()

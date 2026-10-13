@@ -4,13 +4,7 @@ import io.github.bdd.plugin.ConfigProperty;
 import io.github.bdd.plugin.ConfigType;
 import io.github.bdd.plugin.Connector;
 import io.github.bdd.plugin.Source;
-import org.yaml.snakeyaml.LoaderOptions;
-import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.constructor.SafeConstructor;
-import org.yaml.snakeyaml.error.YAMLException;
 
-import java.io.IOException;
-import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -24,6 +18,7 @@ import java.util.regex.Pattern;
 final class Profile {
 
     private static final String FILE = "sources.yaml";
+    private static final YamlFile YAML = new YamlFile(FILE);
     private static final Pattern VARIABLE = Pattern.compile("\\$\\{([^}]*)}");
 
     /** {@code null} when the workspace has no configuration, and so no sources. */
@@ -60,13 +55,13 @@ final class Profile {
             return new Profile(null, Map.of());
         }
 
-        Map<String, Object> root = mapping(parse(file), "");
-        allowOnly(root, "", "profiles");
+        Map<String, Object> root = YAML.mapping(YAML.parse(file), "");
+        YAML.allowOnly(root, "", "profiles");
         Map<String, Map<String, Declaration>> profiles = new LinkedHashMap<>();
-        mapping(root.get("profiles"), "profiles").forEach((profile, value) ->
+        YAML.mapping(root.get("profiles"), "profiles").forEach((profile, value) ->
                 profiles.put(profile, declarations(value, "profiles." + profile)));
         if (profiles.isEmpty()) {
-            throw invalid("profiles", "at least one profile is required");
+            throw YAML.invalid("profiles", "at least one profile is required");
         }
 
         if (name == null) {
@@ -85,36 +80,27 @@ final class Profile {
         return new Profile(name, sources);
     }
 
-    private static Object parse(Path file) {
-        LoaderOptions options = new LoaderOptions();
-        options.setAllowDuplicateKeys(false);
-        try (Reader reader = Files.newBufferedReader(file)) {
-            return new Yaml(new SafeConstructor(options)).load(reader);
-        } catch (YAMLException | IOException e) {
-            throw new ConfigurationException("Cannot read " + file + ": " + e.getMessage());
-        }
-    }
-
     private static Map<String, Declaration> declarations(Object profile, String path) {
-        Map<String, Object> properties = mapping(profile, path);
-        allowOnly(properties, path, "sources");
+        Map<String, Object> properties = YAML.mapping(profile, path);
+        YAML.allowOnly(properties, path, "sources");
         Map<String, Declaration> declarations = new LinkedHashMap<>();
-        mapping(properties.get("sources"), path + ".sources").forEach((source, value) ->
+        YAML.mapping(properties.get("sources"), path + ".sources").forEach((source, value) ->
                 declarations.put(source, declaration(value, path + ".sources." + source)));
         return declarations;
     }
 
     private static Declaration declaration(Object source, String path) {
-        Map<String, Object> properties = mapping(source, path);
-        allowOnly(properties, path, "type", "readOnly", "config");
+        Map<String, Object> properties = YAML.mapping(source, path);
+        YAML.allowOnly(properties, path, "type", "readOnly", "config");
         if (!(properties.get("type") instanceof String type) || type.isBlank()) {
-            throw invalid(path + ".type", "expected the type of the source but was " + show(properties.get("type")));
+            throw YAML.invalid(path + ".type",
+                    "expected the type of the source but was " + YamlFile.show(properties.get("type")));
         }
         Object readOnly = properties.getOrDefault("readOnly", false);
         if (!(readOnly instanceof Boolean)) {
-            throw invalid(path + ".readOnly", "expected true or false but was " + show(readOnly));
+            throw YAML.invalid(path + ".readOnly", "expected true or false but was " + YamlFile.show(readOnly));
         }
-        return new Declaration(type, (Boolean) readOnly, mapping(properties.get("config"), path + ".config"));
+        return new Declaration(type, (Boolean) readOnly, YAML.mapping(properties.get("config"), path + ".config"));
     }
 
     private static ConfiguredSource configure(String name, Declaration declaration, String path,
@@ -122,7 +108,7 @@ final class Profile {
         Connector connector = connectors.stream()
                 .filter(candidate -> candidate.sourceType().equals(declaration.type()))
                 .findFirst()
-                .orElseThrow(() -> invalid(path + ".type", "no connector is installed for source type '"
+                .orElseThrow(() -> YAML.invalid(path + ".type", "no connector is installed for source type '"
                         + declaration.type() + "'; installed: "
                         + String.join(", ", connectors.stream().map(Connector::sourceType).sorted().toList())));
         List<ConfigProperty> schema = connector.configSchema();
@@ -133,15 +119,16 @@ final class Profile {
             ConfigProperty declared = schema.stream()
                     .filter(candidate -> candidate.name().equals(property))
                     .findFirst()
-                    .orElseThrow(() -> invalid(propertyPath, "not a parameter of connector '" + connector.sourceType()
-                            + "'; allowed: " + String.join(", ", schema.stream().map(ConfigProperty::name).toList())));
+                    .orElseThrow(() -> YAML.invalid(propertyPath, "not a parameter of connector '"
+                            + connector.sourceType() + "'; allowed: "
+                            + String.join(", ", schema.stream().map(ConfigProperty::name).toList())));
             if (value != null) {
                 config.put(property, convert(resolve(value, propertyPath, environment), declared.type(), propertyPath));
             }
         });
         for (ConfigProperty property : schema) {
             if (property.required() && !config.containsKey(property.name())) {
-                throw invalid(path + ".config." + property.name(),
+                throw YAML.invalid(path + ".config." + property.name(),
                         "required by connector '" + connector.sourceType() + "'");
             }
         }
@@ -156,7 +143,7 @@ final class Profile {
         return VARIABLE.matcher(text).replaceAll(match -> {
             String variable = environment.get(match.group(1));
             if (variable == null) {
-                throw invalid(path, "environment variable '" + match.group(1) + "' is not set");
+                throw YAML.invalid(path, "environment variable '" + match.group(1) + "' is not set");
             }
             return Matcher.quoteReplacement(variable);
         });
@@ -199,45 +186,7 @@ final class Profile {
             case INTEGER -> "an integer";
             case BOOLEAN -> "true or false";
         };
-        throw invalid(path, "expected " + expected + " but was " + show(value));
-    }
-
-    /** A missing value counts as an empty mapping, so that an empty section needs no special syntax. */
-    private static Map<String, Object> mapping(Object value, String path) {
-        if (value == null) {
-            return Map.of();
-        }
-        if (!(value instanceof Map<?, ?> map)) {
-            throw invalid(path, "expected a mapping but was " + show(value));
-        }
-        Map<String, Object> mapping = new LinkedHashMap<>();
-        map.forEach((key, entry) -> {
-            if (!(key instanceof String)) {
-                throw invalid(path, "expected a text as key but was " + show(key));
-            }
-            mapping.put((String) key, entry);
-        });
-        return mapping;
-    }
-
-    private static void allowOnly(Map<String, Object> mapping, String path, String... keys) {
-        for (String key : mapping.keySet()) {
-            if (!List.of(keys).contains(key)) {
-                throw invalid(path.isEmpty() ? key : path + "." + key,
-                        "unknown property; allowed: " + String.join(", ", keys));
-            }
-        }
-    }
-
-    private static String show(Object value) {
-        if (value == null) {
-            return "missing";
-        }
-        return value instanceof String ? "'" + value + "'" : value.toString();
-    }
-
-    private static ConfigurationException invalid(String path, String problem) {
-        return new ConfigurationException("Invalid " + FILE + ": " + (path.isEmpty() ? "" : path + ": ") + problem);
+        throw YAML.invalid(path, "expected " + expected + " but was " + YamlFile.show(value));
     }
 
     /** @throws IllegalArgumentException if this profile has no source of that name */

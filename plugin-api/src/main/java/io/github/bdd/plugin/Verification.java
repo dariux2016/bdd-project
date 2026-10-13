@@ -6,6 +6,12 @@ package io.github.bdd.plugin;
  * <p>The checks on the number of records count those satisfying the filter the step carries as a
  * table of <code>field | operator | value</code> rows; without a table, every record counts. The
  * checks against a JSON take the expected one from the doc string of the step.
+ *
+ * <p>The data of a source may appear some time after the action that causes it, so the engine
+ * repeats the action and the check until the check is satisfied or a timeout expires. The checks
+ * that later data can only break, {@link #NOT_EXISTS} and {@link #COUNT_AT_MOST}, are instead
+ * repeated for the whole time and fail as soon as they are not satisfied. The timeout is that of the
+ * workspace, unless the phrase uses <code>{timeout}</code>: a number of seconds.
  */
 public enum Verification {
     /** At least one record satisfies the filter. */
