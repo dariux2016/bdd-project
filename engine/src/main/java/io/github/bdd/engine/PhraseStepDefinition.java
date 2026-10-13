@@ -267,7 +267,7 @@ final class PhraseStepDefinition implements StepDefinition {
         return location;
     }
 
-    private record TypedParameter(Type type) implements ParameterInfo {
+    record TypedParameter(Type type) implements ParameterInfo {
 
         @Override
         public Type getType() {

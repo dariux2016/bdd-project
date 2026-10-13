@@ -1,5 +1,6 @@
 package io.github.bdd.engine;
 
+import io.cucumber.core.backend.StepDefinition;
 import io.cucumber.cucumberexpressions.ExpressionFactory;
 import io.cucumber.cucumberexpressions.ParameterType;
 import io.cucumber.cucumberexpressions.ParameterTypeRegistry;
@@ -27,7 +28,15 @@ import java.util.regex.Pattern;
  *   - phrase: "il negozio {source} contiene {key} = {value}"   # the new wording
  *     for: "the fake store {source} has {key} set to {value}"  # a default phrase it stands for
  *     language: it                                             # optional, en by default
+ *
+ * pending:
+ *   - id: reports.rebuild                        # identifies the phrase, e.g. in its phrase request
+ *     phrase: "the report {name} is rebuilt"     # each parameter takes a quoted text
+ *     language: en                               # optional, en by default
  * </pre>
+ *
+ * A pending phrase has no implementation: its steps are {@code pending}, until a connector
+ * declares a phrase with the same {@link Phrase#id() id}.
  */
 final class Catalog {
 
@@ -47,11 +56,12 @@ final class Catalog {
         static final Context NONE = new Context(null, null, null, null, Variables.NONE);
     }
 
+    /** @param connector the connector the phrase leads to; {@code null} for a pending phrase */
     private record Declared(String origin, Connector connector, Phrase phrase) {
     }
 
     private final List<Declared> declared = new ArrayList<>();
-    private final List<PhraseStepDefinition> definitions = new ArrayList<>();
+    private final List<StepDefinition> definitions = new ArrayList<>();
 
     /**
      * @throws ConfigurationException if the catalog file is invalid, an alias does not fit the phrase
@@ -76,6 +86,11 @@ final class Catalog {
         catalog.addAliases(workspace);
 
         for (Declared phrase : catalog.declared) {
+            if (phrase.connector() == null) {
+                catalog.definitions.add(new PendingStepDefinition(
+                        phrase.phrase().id(), phrase.phrase().pattern(), context.currentStep()));
+                continue;
+            }
             catalog.definitions.add(new PhraseStepDefinition(phrase.connector().sourceType(), phrase.phrase(),
                     action(phrase.connector(), phrase.phrase()), context.profile(), context.polling(),
                     context.diagnostics(), context.currentStep(), context.variables()));
@@ -98,15 +113,19 @@ final class Catalog {
             return;
         }
         Map<String, Object> root = YAML.mapping(YAML.parse(file), "");
-        YAML.allowOnly(root, "", "aliases");
-        Object aliases = root.get("aliases");
+        YAML.allowOnly(root, "", "aliases", "pending");
+        List<Declared> defaults = List.copyOf(declared);
+        addAliases(root.get("aliases"), defaults);
+        addPending(root.get("pending"), defaults);
+    }
+
+    private void addAliases(Object aliases, List<Declared> defaults) {
         if (aliases == null) {
             return;
         }
         if (!(aliases instanceof List<?> list)) {
             throw YAML.invalid("aliases", "expected a list but was " + YamlFile.show(aliases));
         }
-        List<Declared> defaults = List.copyOf(declared);
         for (int i = 0; i < list.size(); i++) {
             String path = "aliases[" + i + "]";
             Map<String, Object> alias = YAML.mapping(list.get(i), path);
@@ -129,6 +148,60 @@ final class Catalog {
             if (!given.equals(expected)) {
                 throw YAML.invalid(path + ".phrase", "the alias '" + pattern + "' has parameters "
                         + show(given) + ", which are not those of '" + target + "': " + show(expected));
+            }
+            declared.add(new Declared("workspace", stands.connector(), stands.phrase().in(code, pattern)));
+        }
+    }
+
+    /**
+     * Pending phrases: a wording with an identifier and no implementation. When an installed
+     * connector declares a phrase with the same identifier the wording stands for that phrase, as
+     * an alias would, so that the features keep working unchanged.
+     */
+    private void addPending(Object pending, List<Declared> defaults) {
+        if (pending == null) {
+            return;
+        }
+        if (!(pending instanceof List<?> list)) {
+            throw YAML.invalid("pending", "expected a list but was " + YamlFile.show(pending));
+        }
+        Set<String> ids = new HashSet<>();
+        for (int i = 0; i < list.size(); i++) {
+            String path = "pending[" + i + "]";
+            Map<String, Object> entry = YAML.mapping(list.get(i), path);
+            YAML.allowOnly(entry, path, "id", "phrase", "language");
+            String id = text(entry.get("id"), path + ".id");
+            String pattern = text(entry.get("phrase"), path + ".phrase");
+            Object language = entry.getOrDefault("language", Phrase.ENGLISH);
+            if (!(language instanceof String code) || !LANGUAGES.contains(code)) {
+                throw YAML.invalid(path + ".language", "expected one of "
+                        + String.join(", ", LANGUAGES.stream().sorted().toList()) + " but was "
+                        + YamlFile.show(language));
+            }
+            if (!ids.add(id + "/" + code)) {
+                throw YAML.invalid(path + ".id", "the phrase '" + id + "' is already pending in language " + code);
+            }
+
+            List<Declared> implementing = defaults.stream()
+                    .filter(candidate -> id.equals(candidate.phrase().id()))
+                    .toList();
+            if (implementing.isEmpty()) {
+                declared.add(new Declared("workspace", null, new Phrase(pattern, null, null, code, id)));
+                continue;
+            }
+            Declared stands = implementing.stream()
+                    .filter(candidate -> candidate.phrase().language().equals(code))
+                    .findFirst()
+                    .orElse(implementing.getFirst());
+            if (stands.phrase().language().equals(code) && stands.phrase().pattern().equals(pattern)) {
+                continue;
+            }
+            Set<String> expected = parameters(stands.phrase().pattern());
+            Set<String> given = parameters(pattern);
+            if (!given.equals(expected)) {
+                throw YAML.invalid(path + ".phrase", "the pending phrase '" + pattern + "' has parameters "
+                        + show(given) + ", which are not those of the phrase '" + id + "' that a connector now "
+                        + "declares, '" + stands.phrase().pattern() + "': " + show(expected));
             }
             declared.add(new Declared("workspace", stands.connector(), stands.phrase().in(code, pattern)));
         }
@@ -216,7 +289,7 @@ final class Catalog {
                 (String text) -> text);
     }
 
-    List<PhraseStepDefinition> definitions() {
+    List<StepDefinition> definitions() {
         return List.copyOf(definitions);
     }
 
@@ -224,9 +297,14 @@ final class Catalog {
         List<CatalogEntry> entries = new ArrayList<>();
         for (int i = 0; i < declared.size(); i++) {
             Declared phrase = declared.get(i);
-            entries.add(new CatalogEntry(phrase.phrase().pattern(), phrase.phrase().language(), phrase.origin(),
-                    phrase.connector().sourceType() + "." + phrase.phrase().action(),
-                    phrase.phrase().verification(), definitions.get(i).parameters()));
+            if (definitions.get(i) instanceof PendingStepDefinition pending) {
+                entries.add(new CatalogEntry(phrase.phrase().pattern(), phrase.phrase().language(), phrase.origin(),
+                        "pending:" + phrase.phrase().id(), null, pending.parameters()));
+            } else {
+                entries.add(new CatalogEntry(phrase.phrase().pattern(), phrase.phrase().language(), phrase.origin(),
+                        phrase.connector().sourceType() + "." + phrase.phrase().action(),
+                        phrase.phrase().verification(), ((PhraseStepDefinition) definitions.get(i)).parameters()));
+            }
         }
         return entries;
     }
