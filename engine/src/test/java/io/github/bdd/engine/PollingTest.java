@@ -199,7 +199,7 @@ class PollingTest {
                 """, "Invalid settings.yaml: verification.retries: unknown property; allowed: timeout, pollInterval");
         assertThatSettingsAreRejected("""
                 polling: true
-                """, "Invalid settings.yaml: polling: unknown property; allowed: verification, diagnostics");
+                """, "Invalid settings.yaml: polling: unknown property; allowed: verification, diagnostics, reports");
     }
 
     private void assertThatSettingsAreRejected(String settings, String message) throws IOException {

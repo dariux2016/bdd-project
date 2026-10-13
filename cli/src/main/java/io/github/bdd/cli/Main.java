@@ -4,6 +4,7 @@ import io.github.bdd.engine.Engine;
 import io.github.bdd.engine.ExecutionRequest;
 import io.github.bdd.engine.ExecutionResult;
 import io.github.bdd.engine.ScenarioResult;
+import io.github.bdd.engine.Selection;
 import io.github.bdd.engine.Status;
 import io.github.bdd.engine.StepResult;
 
@@ -17,8 +18,9 @@ public final class Main {
     private static final int EXIT_SUCCESS = 0;
     private static final int EXIT_SCENARIOS_NOT_PASSED = 1;
     private static final int EXIT_ERROR = 2;
+    private static final int EXIT_NO_SCENARIO_SELECTED = 3;
 
-    private static final String USAGE = "Usage: run [workspace] [--profile <name>]";
+    private static final String USAGE = "Usage: run [workspace] [--profile <name>] [--path <path[:line]>]... [--tags <expression>]";
 
     private Main() {
     }
@@ -34,10 +36,16 @@ public final class Main {
         }
         String workspace = null;
         String profile = null;
+        String tags = null;
+        List<String> paths = new ArrayList<>();
         for (int i = 1; i < args.length; i++) {
-            if (args[i].equals("--profile") && profile == null && i + 1 < args.length
-                    && !args[i + 1].startsWith("--")) {
+            boolean hasValue = i + 1 < args.length && !args[i + 1].startsWith("--");
+            if (args[i].equals("--profile") && profile == null && hasValue) {
                 profile = args[++i];
+            } else if (args[i].equals("--tags") && tags == null && hasValue) {
+                tags = args[++i];
+            } else if (args[i].equals("--path") && hasValue) {
+                paths.add(args[++i]);
             } else if (!args[i].startsWith("--") && workspace == null) {
                 workspace = args[i];
             } else {
@@ -48,13 +56,18 @@ public final class Main {
 
         ExecutionResult result;
         try {
-            result = Engine.run(new ExecutionRequest(Path.of(workspace == null ? "" : workspace), profile));
+            result = Engine.run(new ExecutionRequest(Path.of(workspace == null ? "" : workspace), profile,
+                    System.getenv(), new Selection(paths, tags)));
         } catch (RuntimeException e) {
             err.println(e.getMessage());
             return EXIT_ERROR;
         }
 
         print(result, out);
+        if (result.noScenarioSelected()) {
+            err.println("No scenario matches the selection: nothing was executed");
+            return EXIT_NO_SCENARIO_SELECTED;
+        }
         return result.successful() ? EXIT_SUCCESS : EXIT_SCENARIOS_NOT_PASSED;
     }
 
@@ -70,6 +83,9 @@ public final class Main {
         }
         out.println();
         out.println(summary(result.scenarios()));
+        if (result.reports() != null) {
+            out.println("Reports: " + result.reports());
+        }
     }
 
     private static String summary(List<ScenarioResult> scenarios) {

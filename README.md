@@ -9,7 +9,7 @@ Stato: in costruzione. La specifica Ã¨ nella issue #1.
 - `plugin-api`: il contratto dei connettori.
 - `engine`: esegue le feature di un workspace con le frasi dei connettori installati.
 - `connector-fake`: connettore finto in memoria, supporto di test del motore.
-- `cli`: punto d'ingresso; `run [workspace] [--profile <nome>]` esegue le feature in `<workspace>/features` sulle sorgenti del profilo scelto.
+- `cli`: punto d'ingresso; `run [workspace] [--profile <nome>] [--path <percorso>]... [--tags <espressione>]` esegue le feature in `<workspace>/features` sulle sorgenti del profilo scelto.
 
 ## Sorgenti e profili
 
@@ -140,6 +140,61 @@ profiles:
 ```
 
 Il mascheramento riguarda ciÃ² che si mostra: i filtri e i confronti JSON vedono i valori reali.
+
+## Selezione
+
+Senza opzioni `run` esegue tutte le feature del workspace. Le opzioni restringono la selezione e si combinano (uno scenario gira se è sotto uno dei percorsi **e** soddisfa l'espressione di tag):
+
+| Opzione | Effetto |
+| --- | --- |
+| `--path <percorso>` | una cartella, un file o un singolo scenario; ripetibile |
+| `--tags <espressione>` | espressione di tag Cucumber |
+
+I percorsi sono relativi al workspace e devono stare in `features/`; `file:riga` seleziona lo scenario che contiene quella riga (la riga dello scenario o di uno dei suoi step).
+
+```
+run ws --profile local                                        # tutto il workspace
+run ws --profile local --path features/ordini                 # una cartella
+run ws --profile local --path features/ordini/pagamenti.feature   # un file
+run ws --profile local --path features/ordini/pagamenti.feature:12  # uno scenario
+run ws --profile local --tags "@smoke and not @wip"           # per tag
+```
+
+Le espressioni di tag usano `and`, `or`, `not` e le parentesi, es. `@smoke`, `not @wip`, `@a and (@b or @c)`. Un percorso inesistente o un'espressione non valida fermano `run` con un errore prima di eseguire qualsiasi scenario.
+
+Una selezione che non corrisponde a nessuno scenario non è un successo: `run` lo scrive su stderr (`No scenario matches the selection: nothing was executed`) ed esce con codice 3. In `ExecutionResult`, `noScenarioSelected()` è vero e `successful()` falso.
+
+Codici di uscita di `run`: `0` tutti gli scenari passati, `1` almeno uno non passato, `2` errore di uso o di configurazione, `3` nessuno scenario selezionato.
+
+## Report
+
+Ogni esecuzione scrive in `<workspace>/reports/<istante>/`, dove `<istante>` è l'istante di avvio in UTC nel formato `yyyyMMdd-HHmmss-SSS` (sicuro su ogni filesystem; un eventuale suffisso `-2`, `-3`... distingue esecuzioni nello stesso millisecondo):
+
+- `cucumber.json`: JSON Cucumber;
+- `junit.xml`: JUnit XML, per gli strumenti di CI;
+- `report.html`: report HTML;
+- `summary.json`: riepilogo leggibile da macchina.
+
+```json
+{
+  "profile": "local",
+  "selection": { "paths": ["features/ordini"], "tags": "@smoke" },
+  "startedAt": "2026-10-13T16:11:11.885Z",
+  "durationMillis": 412,
+  "counts": { "total": 3, "passed": 2, "failed": 1, "skipped": 0, "undefined": 0 },
+  "noScenarioSelected": false,
+  "successful": false
+}
+```
+
+`run` stampa in coda il percorso della cartella (`Reports: ...`); `ExecutionResult.reports()` lo espone al codice che usa il motore.
+
+Si conservano le ultime 20 esecuzioni; il numero si cambia in `<workspace>/settings.yaml` (intero maggiore o uguale a 1). Le cartelle più vecchie vengono eliminate al termine di ogni esecuzione; solo quelle con un nome nel formato sopra, quindi qualunque altro file o cartella in `reports/` non viene toccato.
+
+```yaml
+reports:
+  keep: 50
+```
 
 ## Build
 
