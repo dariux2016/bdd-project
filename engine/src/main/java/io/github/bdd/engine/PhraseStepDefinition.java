@@ -53,6 +53,10 @@ final class PhraseStepDefinition implements StepDefinition {
     private final String expression;
     /** The parameters of the action and of the verification in the order they appear in the phrase. */
     private final List<Parameter> parameters = new ArrayList<>();
+    /** The parameter taking the table of the step; {@code null} if the action has none. */
+    private final Parameter tableParameter;
+    /** The parameter taking the doc string of the step; {@code null} if the action has none. */
+    private final Parameter textParameter;
 
     PhraseStepDefinition(String sourceType, Phrase phrase, Action action, Profile profile, Polling polling,
             Diagnostics diagnostics, CurrentStep currentStep, Variables variables) {
@@ -70,7 +74,11 @@ final class PhraseStepDefinition implements StepDefinition {
                     + action.name() + "' must only read");
         }
 
+        tableParameter = stepArgumentParameter(action, ParameterType.TABLE);
+        textParameter = stepArgumentParameter(action, ParameterType.TEXT);
+        // The table and the doc string come from the step, not from the text of the phrase.
         Map<String, Parameter> byName = action.parameters().stream()
+                .filter(parameter -> parameter != tableParameter && parameter != textParameter)
                 .collect(Collectors.toMap(Parameter::name, Function.identity()));
         Set<Parameter> required = new HashSet<>(byName.values());
         int byAction = required.size();
@@ -99,6 +107,15 @@ final class PhraseStepDefinition implements StepDefinition {
         }
     }
 
+    private static Parameter stepArgumentParameter(Action action, ParameterType type) {
+        List<Parameter> found = action.parameters().stream().filter(parameter -> parameter.type() == type).toList();
+        if (found.size() > 1) {
+            throw new IllegalStateException("The action '" + action.name() + "' has more than one "
+                    + type + " parameter");
+        }
+        return found.isEmpty() ? null : found.getFirst();
+    }
+
     private static List<Parameter> verificationParameters(Verification verification) {
         return switch (verification) {
             case null -> List.of();
@@ -112,14 +129,15 @@ final class PhraseStepDefinition implements StepDefinition {
     private static String expressionType(ParameterType type) {
         return switch (type) {
             case STRING, SOURCE -> "{string}";
+            case TABLE, TEXT -> throw new IllegalStateException("A " + type + " parameter is not written in a phrase");
             case INTEGER -> "{" + Catalog.INTEGER_OR_VARIABLE + "}";
         };
     }
 
     private static Type javaType(ParameterType type) {
         return switch (type) {
-            case STRING, SOURCE -> String.class;
-            case INTEGER -> String.class;
+            case STRING, SOURCE, INTEGER -> String.class;
+            case TABLE, TEXT -> throw new IllegalStateException("A " + type + " parameter is not written in a phrase");
         };
     }
 
@@ -157,11 +175,12 @@ final class PhraseStepDefinition implements StepDefinition {
                     values.put(parameter.name(), text);
                 }
             }
-            Arguments arguments = new Arguments(values);
             if (verifier == null) {
-                action.handler().execute(arguments);
+                Object given = args.length > parameters.size() ? args[parameters.size()] : null;
+                action.handler().execute(withStepArgument(values, resolved(given)));
                 return;
             }
+            Arguments arguments = new Arguments(values);
             // The table or doc string of the step, if any, follows the parameters of the phrase.
             Object stepArgument = resolved(args.length > parameters.size() ? args[parameters.size()] : null);
             Integer expectedCount = count;
@@ -175,6 +194,22 @@ final class PhraseStepDefinition implements StepDefinition {
         } catch (Exception | AssertionError e) {
             throw new CucumberInvocationTargetException(this, new InvocationTargetException(e));
         }
+    }
+
+    /** The arguments of the action, with the table or doc string of the step bound to the parameter for it. */
+    private Arguments withStepArgument(Map<String, Object> values, Object stepArgument) {
+        if (stepArgument instanceof DataTable table) {
+            if (tableParameter == null) {
+                throw new IllegalArgumentException("This step takes no table");
+            }
+            values.put(tableParameter.name(), table.cells());
+        } else if (stepArgument instanceof DocString docString) {
+            if (textParameter == null) {
+                throw new IllegalArgumentException("This step takes no doc string");
+            }
+            values.put(textParameter.name(), docString.getContent());
+        }
+        return new Arguments(values);
     }
 
     private static Integer integer(Parameter parameter, String text) {
@@ -240,7 +275,8 @@ final class PhraseStepDefinition implements StepDefinition {
         for (Parameter parameter : parameters) {
             infos.add(new TypedParameter(javaType(parameter.type())));
         }
-        if (verifier != null && !currentStep.lacksArgument()) {
+        boolean takesStepArgument = verifier != null || tableParameter != null || textParameter != null;
+        if (takesStepArgument && !currentStep.lacksArgument()) {
             // Typed as Object, the table or doc string arrives as Cucumber read it.
             infos.add(new TypedParameter(Object.class));
         }

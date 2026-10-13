@@ -12,6 +12,7 @@
     <modules>
         <module>plugin-api</module>
         <module>connector-fake</module>
+        <module>connector-http</module>
         <module>engine</module>
         <module>server</module>
         <module>cli</module>
@@ -39,6 +40,11 @@
             <dependency>
                 <groupId>io.github.bdd</groupId>
                 <artifactId>connector-fake</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.bdd</groupId>
+                <artifactId>connector-http</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

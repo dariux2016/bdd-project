@@ -1,6 +1,8 @@
 package io.github.bdd.plugin;
 
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /** The values of an action's parameters for one step, already converted to their declared type. */
 public final class Arguments {
@@ -21,6 +23,17 @@ public final class Arguments {
 
     public Source source(String name) {
         return (Source) value(name);
+    }
+
+    /** The table of the step bound to a {@link ParameterType#TABLE} parameter, if the step has one. */
+    @SuppressWarnings("unchecked")
+    public Optional<List<List<String>>> table(String name) {
+        return Optional.ofNullable((List<List<String>>) values.get(name));
+    }
+
+    /** The doc string of the step bound to a {@link ParameterType#TEXT} parameter, if the step has one. */
+    public Optional<String> text(String name) {
+        return Optional.ofNullable((String) values.get(name));
     }
 
     private Object value(String name) {
