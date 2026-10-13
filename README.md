@@ -9,7 +9,21 @@ Stato: in costruzione. La specifica è nella issue #1.
 - `plugin-api`: il contratto dei connettori.
 - `engine`: esegue le feature di un workspace con le frasi dei connettori installati.
 - `connector-fake`: connettore finto in memoria, supporto di test del motore.
-- `cli`: punto d'ingresso; `run [workspace] [--profile <nome>]` esegue le feature in `<workspace>/features` sulle sorgenti del profilo scelto.
+- `cli`: punto d'ingresso; `run [workspace] [--profile <nome>]` esegue le feature in `<workspace>/features` sulle sorgenti del profilo scelto; `serve [workspace] [--port <n>]` avvia l'interfaccia web (vedi sotto).
+- `server`: API HTTP sulla cartella `features` di un workspace e UI statica, nello stesso artefatto.
+
+## Interfaccia web (`serve`)
+
+```
+serve [workspace] [--port <n>]    # default: directory corrente, porta 8080
+```
+
+Avvia un server in ascolto solo su `localhost`. La UI mostra l'albero di `<workspace>/features`, apre una feature in un editor con evidenziazione della sintassi Gherkin e la salva su disco; si possono creare, rinominare ed eliminare file e cartelle. I file restano la fonte di verità: nessuna integrazione con git.
+
+- Se il file è cambiato su disco dopo l'apertura, il salvataggio è rifiutato (HTTP 409, confronto con un hash SHA-256 del contenuto letto) e la UI offre di ricaricare da disco o sovrascrivere.
+- Le API rifiutano (HTTP 400) i percorsi che escono da `features`: `..`, percorsi assoluti e link simbolici verso l'esterno.
+- API: `GET /api/tree`, `GET|PUT|POST /api/file?path=`, `POST /api/folder?path=`, `POST /api/rename` (`{from, to}`), `DELETE /api/entry?path=`; i percorsi sono relativi a `features`.
+- Scelta sul frontend: JavaScript vanilla (nessun node, nessun download) in `server/src/main/resources/static`, con un evidenziatore Gherkin scritto a mano sovrapposto a una `textarea`. La "build" del frontend è lo step standard di Maven resources, che impacchetta la UI nel jar; `mvn test` funziona offline.
 
 ## Sorgenti e profili
 

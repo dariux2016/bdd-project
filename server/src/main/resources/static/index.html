@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>bdd-project</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside id="sidebar">
+    <div class="toolbar">
+      <button id="new-file" title="Nuova feature">+ File</button>
+      <button id="new-folder" title="Nuova cartella">+ Cartella</button>
+      <button id="rename" title="Rinomina">Rinomina</button>
+      <button id="delete" title="Elimina">Elimina</button>
+    </div>
+    <ul id="tree"></ul>
+  </aside>
+  <main>
+    <header>
+      <span id="current">Nessun file aperto</span>
+      <span id="dirty" hidden>modificato</span>
+      <button id="save" disabled>Salva</button>
+    </header>
+    <div id="conflict" hidden>
+      <span>Il file è cambiato su disco dopo l'apertura.</span>
+      <button id="reload">Ricarica da disco</button>
+      <button id="overwrite">Sovrascrivi</button>
+    </div>
+    <div id="message" hidden></div>
+    <div id="editor" hidden>
+      <pre id="highlight" aria-hidden="true"></pre>
+      <textarea id="input" spellcheck="false" wrap="off"></textarea>
+    </div>
+  </main>
+  <script src="gherkin.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
