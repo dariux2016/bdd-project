@@ -81,7 +81,7 @@ public final class FakeConnector implements Connector {
 
     private static List<Phrase> english() {
         return List.of(
-                new Phrase("the fake store {source} has {key} set to {value}", "put"),
+                new Phrase("the fake store {source} has {key} set to {value}", "put").withId("fake.put"),
                 new Phrase("{amount} is added to {key} in the fake store {source}", "add"),
                 new Phrase("the fake store {source} should have {key} equal to {value}", "expect"),
                 new Phrase("the fake store {source} holds the record {json}", "insert"),
@@ -116,7 +116,7 @@ public final class FakeConnector implements Connector {
 
     private static List<Phrase> italian() {
         return List.of(
-                italian("lo store finto {source} ha {key} impostato a {value}", "put", null),
+                italian("lo store finto {source} ha {key} impostato a {value}", "put", null).withId("fake.put"),
                 italian("{amount} viene aggiunto a {key} nello store finto {source}", "add", null),
                 italian("lo store finto {source} deve avere {key} uguale a {value}", "expect", null),
                 italian("lo store finto {source} contiene il record {json}", "insert", null),

@@ -266,6 +266,21 @@ When I call GET "/orders/${orderId}" on the HTTP service "api" until the respons
 - Se il servizio non accetta la connessione o non risponde entro i timeout della sorgente lo step fallisce indicando indirizzo e timeout scaduto.
 - L'ultima risposta è conservata per sorgente per tutta l'esecuzione: non viene azzerata tra gli scenari.
 
+### Frasi pending
+
+Una frase può esistere prima di avere un'implementazione. Si dichiara in `catalog.yaml` con un identificativo:
+
+```yaml
+pending:
+  - id: reports.rebuild                      # identificativo della frase
+    phrase: "the report {name} is rebuilt"   # ogni parametro accetta un testo tra virgolette
+    language: en                             # facoltativo, en di default
+```
+
+L'autore la usa subito nelle feature: all'esecuzione lo step risulta `PENDING` (distinto da `PASSED`, `FAILED` e `UNDEFINED`) e gli step successivi dello scenario `SKIPPED`. Uno scenario pending non fa fallire `run`, salvo `--fail-on-pending`. In `ExecutionResult`, `successful()` ignora i pending, `successful(true)` li conta come falliti e `hasPending()` li segnala. Nel catalogo effettivo il bersaglio è `pending:<id>`.
+
+Quando un connettore installato dichiara una frase con lo stesso identificativo (`Phrase.withId`), la frase pending diventa attiva: la formulazione scritta nel workspace resta valida come alias della frase del connettore, quindi le feature passano senza modifiche. In quel caso i parametri della formulazione devono essere quelli della frase del connettore, altrimenti il caricamento fallisce con un errore che li elenca.
+
 ## Selezione
 
 Senza opzioni `run` esegue tutte le feature del workspace. Le opzioni restringono la selezione e si combinano (uno scenario gira se è sotto uno dei percorsi **e** soddisfa l'espressione di tag):
@@ -274,6 +289,7 @@ Senza opzioni `run` esegue tutte le feature del workspace. Le opzioni restringon
 | --- | --- |
 | `--path <percorso>` | una cartella, un file o un singolo scenario; ripetibile |
 | `--tags <espressione>` | espressione di tag Cucumber |
+| `--fail-on-pending` | gli scenari pending fanno terminare `run` con codice 1 |
 
 I percorsi sono relativi al workspace e devono stare in `features/`; `file:riga` seleziona lo scenario che contiene quella riga (la riga dello scenario o di uno dei suoi step).
 
@@ -289,7 +305,7 @@ Le espressioni di tag usano `and`, `or`, `not` e le parentesi, es. `@smoke`, `no
 
 Una selezione che non corrisponde a nessuno scenario non è un successo: `run` lo scrive su stderr (`No scenario matches the selection: nothing was executed`) ed esce con codice 3. In `ExecutionResult`, `noScenarioSelected()` è vero e `successful()` falso.
 
-Codici di uscita di `run`: `0` tutti gli scenari passati, `1` almeno uno non passato, `2` errore di uso o di configurazione, `3` nessuno scenario selezionato.
+Codici di uscita di `run`: `0` nessuno scenario fallito (i pending non contano, salvo `--fail-on-pending`), `1` almeno uno non passato, `2` errore di uso o di configurazione, `3` nessuno scenario selezionato.
 
 ## Report
 

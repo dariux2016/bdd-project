@@ -58,7 +58,8 @@ final class ResultCollector implements EventListener {
             case PASSED -> Status.PASSED;
             case SKIPPED, UNUSED -> Status.SKIPPED;
             case UNDEFINED -> Status.UNDEFINED;
-            case FAILED, AMBIGUOUS, PENDING -> Status.FAILED;
+            case FAILED, AMBIGUOUS -> Status.FAILED;
+            case PENDING -> Status.PENDING;
         };
     }
 

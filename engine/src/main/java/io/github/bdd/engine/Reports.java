@@ -124,7 +124,8 @@ final class Reports {
         summary.put("counts", counts);
         summary.put("noScenarioSelected", scenarios.isEmpty());
         summary.put("successful", !scenarios.isEmpty()
-                && scenarios.stream().allMatch(scenario -> scenario.status() == Status.PASSED));
+                && scenarios.stream().allMatch(scenario ->
+                        scenario.status() == Status.PASSED || scenario.status() == Status.PENDING));
         try {
             new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
                     .writeValue(directory.resolve("summary.json").toFile(), summary);
