@@ -3,6 +3,7 @@ package io.github.bdd.plugin;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /** The values of an action's parameters for one step, already converted to their declared type. */
 public final class Arguments {
@@ -10,7 +11,7 @@ public final class Arguments {
     private final Map<String, Object> values;
     private final List<List<String>> table;
     private final String text;
-    private Instant scenarioStart = Instant.EPOCH;
+    private final Instant scenarioStart;
 
     public Arguments(Map<String, Object> values) {
         this(values, null, null);
@@ -21,15 +22,19 @@ public final class Arguments {
      * @param text the content of the step's doc string, or {@code null}
      */
     public Arguments(Map<String, Object> values, List<List<String>> table, String text) {
+        this(values, table, text, Instant.EPOCH);
+    }
+
+    private Arguments(Map<String, Object> values, List<List<String>> table, String text, Instant scenarioStart) {
         this.values = Map.copyOf(values);
         this.table = table;
         this.text = text;
+        this.scenarioStart = scenarioStart;
     }
 
     /** Gives these arguments the instant their scenario started; the engine does it for every step. */
     public Arguments atScenarioStart(Instant scenarioStart) {
-        this.scenarioStart = scenarioStart;
-        return this;
+        return new Arguments(values, table, text, scenarioStart);
     }
 
     /**
@@ -74,13 +79,13 @@ public final class Arguments {
     }
 
     /** The rows of the data table of the step, if it has one. */
-    public java.util.Optional<List<List<String>>> optionalTable() {
-        return java.util.Optional.ofNullable(table);
+    public Optional<List<List<String>>> optionalTable() {
+        return Optional.ofNullable(table);
     }
 
     /** The content of the doc string of the step, if it has one. */
-    public java.util.Optional<String> optionalText() {
-        return java.util.Optional.ofNullable(text);
+    public Optional<String> optionalText() {
+        return Optional.ofNullable(text);
     }
 
     private Object value(String name) {

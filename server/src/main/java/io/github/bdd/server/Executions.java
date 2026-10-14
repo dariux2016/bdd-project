@@ -5,6 +5,7 @@ import io.github.bdd.engine.Engine;
 import io.github.bdd.engine.ExecutionListener;
 import io.github.bdd.engine.ExecutionRequest;
 import io.github.bdd.engine.ExecutionResult;
+import io.github.bdd.engine.LocalContainers;
 import io.github.bdd.engine.ScenarioResult;
 import io.github.bdd.engine.Selection;
 import io.github.bdd.engine.Status;
@@ -52,6 +53,7 @@ final class Executions {
 
     private final Path workspace;
     private final Map<String, String> environment;
+    private final LocalContainers containers = new LocalContainers();
     private Run current;
     private int ids;
 
@@ -79,7 +81,7 @@ final class Executions {
         }
         List<String> selected = paths.stream().map(path -> FEATURES + path.replaceFirst("^/+", "")).toList();
         ExecutionRequest request = new ExecutionRequest(
-                workspace, profile, environment, new Selection(selected, tags));
+                workspace, profile, environment, new Selection(selected, tags), containers);
         Thread thread = new Thread(() -> run.execute(request), "execution-" + run.id);
         run.thread = thread;
         thread.setDaemon(true);
@@ -116,6 +118,15 @@ final class Executions {
 
     /** Stops the running execution, if any, and waits briefly for it to write its reports. */
     void shutdown() {
+        // The containers of the sources that declare an image last as long as the server.
+        try {
+            shutdownRuns();
+        } finally {
+            containers.close();
+        }
+    }
+
+    private void shutdownRuns() {
         Run run = latest();
         if (run != null && cancel() && run.thread != null) {
             try {
@@ -192,7 +203,10 @@ final class Executions {
             if (result != null) {
                 data.put("scenarios", result.scenarios().size());
                 data.put("failed", result.scenarios().stream()
-                        .filter(scenario -> scenario.status() != Status.PASSED).count());
+                        .filter(scenario -> scenario.status() != Status.PASSED
+                                && scenario.status() != Status.PENDING).count());
+                data.put("pending", result.scenarios().stream()
+                        .filter(scenario -> scenario.status() == Status.PENDING).count());
                 data.put("noScenarioSelected", result.noScenarioSelected());
                 if (result.reports() != null) {
                     data.put("reports", workspace.toAbsolutePath().normalize().relativize(

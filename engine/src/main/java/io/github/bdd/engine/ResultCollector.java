@@ -74,7 +74,7 @@ final class ResultCollector implements EventListener {
                     testStep.getStep().getKeyword().strip(),
                     testStep.getStep().getText(),
                     status,
-                    status == Status.FAILED ? message(event.getResult().getError()) : null,
+                    status == Status.FAILED || status == Status.PENDING ? message(event.getResult().getError()) : null,
                     currentStep.inner());
             steps.add(step);
             listener.stepFinished(step);
@@ -90,7 +90,12 @@ final class ResultCollector implements EventListener {
                 status(event.getResult()),
                 steps);
         scenarios.add(scenario);
-        if (scenario.status() != Status.PASSED) {
+        if (scenario.status() == Status.PENDING) {
+            // Pending is not a failure: it only marks the feature when nothing worse happened.
+            if (featureStatus == Status.PASSED) {
+                featureStatus = Status.PENDING;
+            }
+        } else if (scenario.status() != Status.PASSED) {
             featureStatus = Status.FAILED;
         }
         listener.scenarioFinished(scenario);

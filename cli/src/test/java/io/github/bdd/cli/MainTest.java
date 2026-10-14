@@ -202,6 +202,7 @@ class MainTest {
                 PENDING    features/store.feature:2 Wipe
                   PASSED     Given the fake store "fruit" has "apples" set to 5
                   PENDING    When the store "fruit" is wiped
+                             The phrase 'store.wipe' has no implementation yet
                   SKIPPED    Then the fake store "fruit" should have "apples" equal to 5
 
                 1 scenario: 1 pending

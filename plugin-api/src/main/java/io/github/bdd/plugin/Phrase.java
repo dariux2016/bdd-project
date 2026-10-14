@@ -8,8 +8,8 @@ package io.github.bdd.plugin;
  *
  * @param pattern a Cucumber Expression in which each parameter is written as the name of an action
  *     parameter between braces, e.g. <code>the store has {key} set to {value}</code>; it must use
- *     every parameter of the action exactly once, except {@link ParameterType#TEXT} ones, which
- *     it never mentions. A phrase with a verification may also use the
+ *     every parameter of the action exactly once; the table or doc string of a step is never
+ *     written in it. A phrase with a verification may also use the
  *     parameters of that {@link Verification} and <code>{timeout}</code>, which no action
  *     parameter may be named after
  * @param action the name of the target action in the declaring connector

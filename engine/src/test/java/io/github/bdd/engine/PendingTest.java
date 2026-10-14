@@ -39,7 +39,7 @@ class PendingTest {
         assertThat(scenario.status()).isEqualTo(Status.PENDING);
         assertThat(scenario.steps()).extracting(StepResult::status)
                 .containsExactly(Status.PASSED, Status.PENDING, Status.SKIPPED);
-        assertThat(scenario.steps().get(1).error()).isNull();
+        assertThat(scenario.steps().get(1).error()).contains("has no implementation yet");
     }
 
     @Test
