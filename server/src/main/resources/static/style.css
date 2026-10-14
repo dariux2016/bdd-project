@@ -59,3 +59,17 @@ body.page { display: block; overflow: auto; }
 #phrases { border-collapse: collapse; width: 100%; }
 #phrases th, #phrases td { text-align: left; padding: 5px 10px; border-bottom: 1px solid #eee; vertical-align: top; }
 #phrases td.pattern { font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+/* Execution panel (run.js) */
+#run-panel { border-top: 1px solid #ccc; max-height: 40%; overflow: auto; }
+.run-bar { display: flex; gap: 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid #ddd; flex-wrap: wrap; }
+#run-error { background: #f8d7da; padding: 8px 10px; white-space: pre-wrap; }
+#run-results { padding: 6px 10px; font-size: 13px; }
+.feature-name { font-weight: 600; margin-top: 6px; }
+.scenario { margin-left: 14px; }
+.scenario-name { margin-top: 4px; }
+.step { margin-left: 14px; }
+.step-error { margin: 2px 0 6px; padding: 6px; background: #fdf0f0; border-left: 3px solid #c33; white-space: pre-wrap; font: 12px/1.4 ui-monospace, Consolas, monospace; }
+.st-passed { color: #0a6; }
+.st-failed, .st-error, .st-undefined { color: #c33; }
+.st-skipped, .st-cancelled { color: #888; }
+.st-running, .st-starting { color: #06c; }

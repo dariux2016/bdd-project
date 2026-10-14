@@ -203,6 +203,16 @@ public final class Engine {
      * @throws IllegalStateException if an installed connector declares an invalid phrase
      */
     public static ExecutionResult run(ExecutionRequest request) {
+        return run(request, new ExecutionListener() { }, new Cancellation());
+    }
+
+    /**
+     * Like {@link #run(ExecutionRequest)}, telling the listener how the execution advances and
+     * stopping when the cancellation is requested. The exceptions are thrown before the listener is
+     * told that the execution started.
+     */
+    public static ExecutionResult run(ExecutionRequest request, ExecutionListener listener,
+            Cancellation cancellation) {
         Path workspace = request.workspace().toAbsolutePath().normalize();
         if (!Files.isDirectory(workspace.resolve("features"))) {
             throw new IllegalArgumentException("No 'features' directory in workspace " + workspace);
@@ -212,7 +222,7 @@ public final class Engine {
         // Containers that last as long as the execution are destroyed however it ends.
         LocalContainers owned = request.containers() == null ? new LocalContainers() : null;
         try (Plugins plugins = Plugins.load(workspace, classLoader)) {
-            return run(request, workspace, plugins.connectors(), classLoader,
+            return run(request, listener, cancellation, workspace, plugins.connectors(), classLoader,
                     owned != null ? owned : request.containers());
         } finally {
             if (owned != null) {
@@ -221,15 +231,16 @@ public final class Engine {
         }
     }
 
-    private static ExecutionResult run(ExecutionRequest request, Path workspace, List<Connector> connectors,
-            ClassLoader classLoader, LocalContainers containers) {
+    private static ExecutionResult run(ExecutionRequest request, ExecutionListener listener,
+            Cancellation cancellation, Path workspace, List<Connector> connectors, ClassLoader classLoader,
+            LocalContainers containers) {
         Profile profile = Profile.load(workspace, request.profile(), request.environment(), connectors, containers);
-        CurrentStep currentStep = new CurrentStep(workspace);
+        CurrentStep currentStep = new CurrentStep(workspace, cancellation);
         Variables variables = new Variables(request.environment());
         Catalog catalog = Catalog.load(workspace, connectors, new Catalog.Context(
                 profile, Polling.load(workspace), Diagnostics.load(workspace), currentStep, variables));
         CatalogBackend backend = new CatalogBackend(catalog);
-        ResultCollector collector = new ResultCollector(workspace, currentStep);
+        ResultCollector collector = new ResultCollector(workspace, currentStep, listener);
 
         Selection selection = request.selection();
         RuntimeOptionsBuilder builder = new RuntimeOptionsBuilder();

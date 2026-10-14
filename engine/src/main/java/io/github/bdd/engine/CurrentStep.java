@@ -28,9 +28,21 @@ final class CurrentStep implements EventListener {
     private String innerLocation;
     private List<StepResult> inner = List.of();
 
-    CurrentStep(Path workspace) {
+    private final Cancellation cancellation;
+
+    CurrentStep(Path workspace, Cancellation cancellation) {
         this.workspacePath = workspace;
         this.workspace = workspace.toUri();
+        this.cancellation = cancellation;
+    }
+
+    /** @throws IllegalStateException if the execution was cancelled */
+    void beginExecution() {
+        cancellation.enterStep();
+    }
+
+    void endExecution() {
+        cancellation.leaveStep();
     }
 
     @Override
