@@ -77,7 +77,7 @@ public final class Engine {
         Catalog catalog = Catalog.load(workspace, connectors, new Catalog.Context(
                 profile, Polling.load(workspace), Diagnostics.load(workspace), currentStep, variables));
         CatalogBackend backend = new CatalogBackend(catalog);
-        ResultCollector collector = new ResultCollector(workspace);
+        ResultCollector collector = new ResultCollector(workspace, currentStep);
 
         Selection selection = request.selection();
         RuntimeOptionsBuilder builder = new RuntimeOptionsBuilder();

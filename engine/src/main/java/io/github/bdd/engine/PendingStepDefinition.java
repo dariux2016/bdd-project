@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
  * A phrase that has no implementation yet: the author can use it in features, and executing it
  * leaves the step {@code pending}. Each parameter of the pattern takes a quoted text.
  */
-final class PendingStepDefinition implements StepDefinition {
+final class PendingStepDefinition implements CatalogStep {
 
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{(\\w+)}");
 
@@ -64,7 +64,8 @@ final class PendingStepDefinition implements StepDefinition {
         return infos;
     }
 
-    List<Parameter> parameters() {
+    @Override
+    public List<Parameter> parameters() {
         return List.copyOf(parameters);
     }
 
