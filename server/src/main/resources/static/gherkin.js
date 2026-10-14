@@ -44,10 +44,13 @@
     return strings(line);
   }
 
-  function highlight(text) {
+  // marks: optional {lineNumber: kind}, which wraps that line so that a problem stands out.
+  function highlight(text, marks) {
     var state = { docstring: false };
-    return text.split('\n').map(function (line) {
-      return highlightLine(line, state);
+    return text.split('\n').map(function (line, index) {
+      var html = highlightLine(line, state);
+      var kind = marks && marks[index + 1];
+      return kind ? '<span class="mark mark-' + kind + '">' + html + '</span>' : html;
     }).join('\n');
   }
 

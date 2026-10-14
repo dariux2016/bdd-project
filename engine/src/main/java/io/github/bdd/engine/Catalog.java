@@ -73,6 +73,8 @@ final class Catalog {
     /** The phrases of the connectors and aliases, in the order of {@link #declared}, then the composite ones. */
     private final List<CatalogStep> definitions = new ArrayList<>();
     private final List<Expression> expressions = new ArrayList<>();
+    /** What each definition matches, in the order of {@link #definitions}; as Cucumber matches a step. */
+    private List<Pattern> regexps = List.of();
     /** The composite phrases, each with the path of its declaration in the catalog file. */
     private final List<CompositeStepDefinition> composites = new ArrayList<>();
     private final List<String> compositePaths = new ArrayList<>();
@@ -491,7 +493,7 @@ final class Catalog {
 
     /** Two phrases that can match the same step would leave Cucumber to refuse it at execution. */
     private void rejectAmbiguity() {
-        List<Pattern> regexps = expressions.stream().map(Expression::getRegexp).toList();
+        regexps = expressions.stream().map(Expression::getRegexp).toList();
         List<List<String>> samples = definitions.stream()
                 .map(definition -> samples(definition.getPattern()))
                 .toList();
@@ -558,6 +560,18 @@ final class Catalog {
 
     List<CatalogStep> definitions() {
         return List.copyOf(definitions);
+    }
+
+    /** The entries whose phrase matches a step, as Cucumber would match it at execution. */
+    List<CatalogEntry> matching(String stepText) {
+        List<CatalogEntry> all = entries();
+        List<CatalogEntry> matching = new ArrayList<>();
+        for (int i = 0; i < regexps.size(); i++) {
+            if (regexps.get(i).matcher(stepText).matches()) {
+                matching.add(all.get(i));
+            }
+        }
+        return matching;
     }
 
     List<CatalogEntry> entries() {

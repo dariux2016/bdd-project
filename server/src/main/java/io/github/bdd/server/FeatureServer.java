@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import io.github.bdd.engine.ConfigurationException;
+import io.github.bdd.engine.Engine;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -27,6 +29,8 @@ import java.util.Map;
  * POST   /api/folder?path=...                             create
  * POST   /api/rename         {from, to}
  * DELETE /api/entry?path=...
+ * POST   /api/validate       {content}                    -> {language, errors, steps}
+ * GET    /api/catalog?source=&language=&q=                -> {phrases}
  * </pre>
  */
 public final class FeatureServer implements AutoCloseable {
@@ -35,8 +39,10 @@ public final class FeatureServer implements AutoCloseable {
 
     private final HttpServer http;
     private final FeatureStore store;
+    private final Path workspace;
 
     public FeatureServer(Path workspace, int port) throws IOException {
+        this.workspace = workspace;
         this.store = new FeatureStore(workspace.resolve("features"));
         this.http = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), 0);
         http.createContext("/api/", this::api);
@@ -85,6 +91,11 @@ public final class FeatureServer implements AutoCloseable {
                     store.delete(param(exchange, "path"));
                     send(exchange, 200, Map.of("deleted", param(exchange, "path")));
                 }
+                case "POST /api/validate" -> send(exchange, 200,
+                        Engine.validate(workspace, requireText(body(exchange), "content")));
+                case "GET /api/catalog" -> send(exchange, 200, Map.of("phrases", CatalogView.phrases(
+                        Engine.catalog(workspace), optional(exchange, "source"), optional(exchange, "language"),
+                        optional(exchange, "q"))));
                 default -> error(exchange, 404, "Unknown endpoint: " + route);
             }
         } catch (FeatureStore.PathRejectedException e) {
@@ -93,6 +104,8 @@ public final class FeatureServer implements AutoCloseable {
             error(exchange, 404, e.getMessage());
         } catch (FeatureStore.ConflictException e) {
             error(exchange, 409, e.getMessage());
+        } catch (ConfigurationException e) {
+            error(exchange, 422, e.getMessage());
         } catch (IllegalArgumentException e) {
             error(exchange, 400, e.getMessage());
         } catch (Exception e) {
@@ -156,6 +169,14 @@ public final class FeatureServer implements AutoCloseable {
             }
         }
         throw new IllegalArgumentException("Missing parameter: " + name);
+    }
+
+    private static String optional(HttpExchange exchange, String name) {
+        try {
+            return param(exchange, name);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     private static JsonNode body(HttpExchange exchange) throws IOException {

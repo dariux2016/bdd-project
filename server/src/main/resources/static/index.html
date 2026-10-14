@@ -21,6 +21,7 @@
       <span id="current">Nessun file aperto</span>
       <span id="dirty" hidden>modificato</span>
       <button id="save" disabled>Salva</button>
+      <a id="catalog-link" href="catalog.html">Catalogo</a>
     </header>
     <div id="conflict" hidden>
       <span>Il file è cambiato su disco dopo l'apertura.</span>
@@ -31,9 +32,12 @@
     <div id="editor" hidden>
       <pre id="highlight" aria-hidden="true"></pre>
       <textarea id="input" spellcheck="false" wrap="off"></textarea>
+      <ul id="suggestions" hidden></ul>
     </div>
+    <ul id="problems" hidden></ul>
   </main>
   <script src="gherkin.js"></script>
+  <script src="validation.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -24,7 +24,8 @@
 
   function renderHighlight() {
     // A trailing newline keeps the overlay as tall as the textarea.
-    $('highlight').innerHTML = Gherkin.highlight($('input').value) + '\n';
+    var marks = window.Validation ? window.Validation.marks() : null;
+    $('highlight').innerHTML = Gherkin.highlight($('input').value, marks) + '\n';
   }
 
   function updateDirty() {
@@ -44,6 +45,7 @@
     showMessage('');
     renderHighlight();
     updateDirty();
+    document.dispatchEvent(new Event('bdd:opened'));
   }
 
   function loadFile(path) {
@@ -116,6 +118,7 @@
   }
 
   $('input').addEventListener('input', function () { renderHighlight(); updateDirty(); });
+  document.addEventListener('bdd:marks', renderHighlight);
   $('input').addEventListener('scroll', function () {
     $('highlight').scrollTop = $('input').scrollTop;
     $('highlight').scrollLeft = $('input').scrollLeft;
