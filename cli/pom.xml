@@ -21,6 +21,27 @@
             <groupId>io.github.bdd</groupId>
             <artifactId>server</artifactId>
         </dependency>
+        <!-- The connectors included in the artifact; the engine finds them with ServiceLoader. -->
+        <dependency>
+            <groupId>io.github.bdd</groupId>
+            <artifactId>connector-postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.github.bdd</groupId>
+            <artifactId>connector-mongodb</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.github.bdd</groupId>
+            <artifactId>connector-http</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.github.bdd</groupId>
+            <artifactId>connector-kafka</artifactId>
+            <scope>runtime</scope>
+        </dependency>
         <!-- JSONPath logs through SLF4J, which complains on the console when it finds no provider. -->
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -44,4 +65,65 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <!--
+      The artifact is one executable jar, target/bdd-project.jar, with the engine, the server and the
+      included connectors. The smoke test (*IT) runs it after packaging, in `mvn verify`.
+    -->
+    <build>
+        <finalName>bdd-project</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>io.github.bdd.cli.Main</mainClass>
+                                    <manifestEntries>
+                                        <Multi-Release>true</Multi-Release>
+                                    </manifestEntries>
+                                </transformer>
+                                <!-- Joins the META-INF/services files, which is how connectors are found. -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>META-INF/MANIFEST.MF</exclude>
+                                        <exclude>module-info.class</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

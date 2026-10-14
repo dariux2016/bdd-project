@@ -17,10 +17,25 @@ public record ExecutionResult(List<ScenarioResult> scenarios, Path reports) {
         this(scenarios, null);
     }
 
-    /** Whether the selection matched at least one scenario and every scenario passed. */
+    /**
+     * Whether the selection matched at least one scenario and none failed. A scenario that is only
+     * {@code pending} does not count as failed: see {@link #successful(boolean)}.
+     */
     public boolean successful() {
-        return !noScenarioSelected()
-                && scenarios.stream().allMatch(scenario -> scenario.status() == Status.PASSED);
+        return successful(false);
+    }
+
+    /**
+     * @param failOnPending whether a pending scenario makes the execution unsuccessful
+     */
+    public boolean successful(boolean failOnPending) {
+        return !noScenarioSelected() && scenarios.stream().allMatch(scenario ->
+                scenario.status() == Status.PASSED || (!failOnPending && scenario.status() == Status.PENDING));
+    }
+
+    /** Whether at least one scenario is pending: it stopped at a phrase with no implementation yet. */
+    public boolean hasPending() {
+        return scenarios.stream().anyMatch(scenario -> scenario.status() == Status.PENDING);
     }
 
     /** Whether the selection matched no scenario at all, so that nothing was verified. */

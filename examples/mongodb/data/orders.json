@@ -1,0 +1,5 @@
+[
+  {"orderId": "F-1", "status": "PAID", "total": {"$numberDecimal": "10.50"}},
+  {"orderId": "F-2", "status": "PAID", "total": {"$numberDecimal": "99.00"}},
+  {"orderId": "F-3", "status": "CANCELLED", "total": {"$numberDecimal": "5.00"}}
+]

@@ -1,1 +1,2 @@
 io.github.bdd.engine.StrictConnector
+io.github.bdd.engine.RecordingConnector

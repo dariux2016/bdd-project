@@ -180,6 +180,51 @@ class MainTest {
         assertThat(run("run", workspace.toString(), "--tags")).isEqualTo(2);
     }
 
+    @Test
+    void pendingScenarioIsShownAndDoesNotFailTheExecutionByDefault() throws IOException {
+        Files.writeString(workspace.resolve("catalog.yaml"), """
+                pending:
+                  - id: store.wipe
+                    phrase: "the store {name} is wiped"
+                """);
+        feature("""
+                Feature: Store
+                  Scenario: Wipe
+                    Given the fake store "fruit" has "apples" set to 5
+                    When the store "fruit" is wiped
+                    Then the fake store "fruit" should have "apples" equal to 5
+                """);
+
+        int exitCode = run("run", workspace.toString(), "--profile", "local");
+
+        assertThat(exitCode).isZero();
+        assertThat(outputWithoutReportsLine()).isEqualToNormalizingNewlines("""
+                PENDING    features/store.feature:2 Wipe
+                  PASSED     Given the fake store "fruit" has "apples" set to 5
+                  PENDING    When the store "fruit" is wiped
+                             The phrase 'store.wipe' has no implementation yet
+                  SKIPPED    Then the fake store "fruit" should have "apples" equal to 5
+
+                1 scenario: 1 pending
+                """);
+    }
+
+    @Test
+    void failOnPendingMakesPendingScenariosFailTheExecution() throws IOException {
+        Files.writeString(workspace.resolve("catalog.yaml"), """
+                pending:
+                  - id: store.wipe
+                    phrase: "the store {name} is wiped"
+                """);
+        feature("""
+                Feature: Store
+                  Scenario: Wipe
+                    When the store "fruit" is wiped
+                """);
+
+        assertThat(run("run", workspace.toString(), "--profile", "local", "--fail-on-pending")).isEqualTo(1);
+    }
+
     private String outputWithoutReportsLine() {
         return out.toString(StandardCharsets.UTF_8).lines()
                 .filter(line -> !line.startsWith("Reports: "))

@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import io.github.bdd.engine.ConfigurationException;
+import io.github.bdd.engine.Engine;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -12,8 +14,12 @@ import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * HTTP API over the features directory of a workspace, plus the static UI from the same artifact.
@@ -27,6 +33,14 @@ import java.util.Map;
  * POST   /api/folder?path=...                             create
  * POST   /api/rename         {from, to}
  * DELETE /api/entry?path=...
+ * POST   /api/validate       {content}                    -> {language, errors, steps}
+ * GET    /api/catalog?source=&language=&q=                -> {phrases}
+ *
+ * POST   /api/runs           {profile?, paths?, tags?}    start an execution; 409 if one is running
+ * GET    /api/runs/current                                {run: {...} | null}: the current or last execution
+ * GET    /api/runs/events                                 Server-Sent Events of the current or last
+ *                                                         execution, from its start (or Last-Event-ID)
+ * POST   /api/runs/cancel                                 stop the running execution
  * </pre>
  */
 public final class FeatureServer implements AutoCloseable {
@@ -35,10 +49,17 @@ public final class FeatureServer implements AutoCloseable {
 
     private final HttpServer http;
     private final FeatureStore store;
+    private final Path workspace;
+    private final Executions executions;
+    /** An event stream holds its thread for as long as the execution runs. */
+    private final ExecutorService threads = Executors.newCachedThreadPool();
 
     public FeatureServer(Path workspace, int port) throws IOException {
+        this.workspace = workspace;
         this.store = new FeatureStore(workspace.resolve("features"));
+        this.executions = new Executions(workspace, System.getenv());
         this.http = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), 0);
+        http.setExecutor(threads);
         http.createContext("/api/", this::api);
         http.createContext("/", this::staticResource);
     }
@@ -54,7 +75,9 @@ public final class FeatureServer implements AutoCloseable {
 
     @Override
     public void close() {
+        executions.shutdown();
         http.stop(0);
+        threads.shutdownNow();
     }
 
     private void api(HttpExchange exchange) throws IOException {
@@ -85,20 +108,103 @@ public final class FeatureServer implements AutoCloseable {
                     store.delete(param(exchange, "path"));
                     send(exchange, 200, Map.of("deleted", param(exchange, "path")));
                 }
+                case "POST /api/validate" -> send(exchange, 200,
+                        Engine.validate(workspace, requireText(body(exchange), "content")));
+                case "GET /api/catalog" -> send(exchange, 200, Map.of("phrases", CatalogView.phrases(
+                        Engine.catalog(workspace), optional(exchange, "source"), optional(exchange, "language"),
+                        optional(exchange, "q"))));
+                case "POST /api/runs" -> {
+                    JsonNode body = body(exchange);
+                    List<String> paths = new ArrayList<>();
+                    body.path("paths").forEach(path -> paths.add(path.asText()));
+                    send(exchange, 202, executions.start(text(body, "profile"), paths, text(body, "tags")));
+                }
+                case "GET /api/runs/current" -> {
+                    Executions.Run run = executions.latest();
+                    Map<String, Object> reply = new LinkedHashMap<>();
+                    reply.put("run", run == null ? null : run.summary());
+                    send(exchange, 200, reply);
+                }
+                case "GET /api/runs/events" -> events(exchange);
+                case "POST /api/runs/cancel" -> {
+                    if (!executions.cancel()) {
+                        error(exchange, 409, "No execution is running");
+                    } else {
+                        send(exchange, 202, Map.of("cancelling", true));
+                    }
+                }
                 default -> error(exchange, 404, "Unknown endpoint: " + route);
             }
+        } catch (Executions.BusyException e) {
+            error(exchange, 409, e.getMessage());
+        } catch (Executions.StartException e) {
+            error(exchange, 400, e.getMessage());
         } catch (FeatureStore.PathRejectedException e) {
             error(exchange, 400, e.getMessage());
         } catch (FeatureStore.NotFoundException e) {
             error(exchange, 404, e.getMessage());
         } catch (FeatureStore.ConflictException e) {
             error(exchange, 409, e.getMessage());
+        } catch (ConfigurationException e) {
+            error(exchange, 422, e.getMessage());
         } catch (IllegalArgumentException e) {
             error(exchange, 400, e.getMessage());
         } catch (Exception e) {
             error(exchange, 500, String.valueOf(e.getMessage()));
         } finally {
             exchange.close();
+        }
+    }
+
+    /**
+     * Streams the events of the latest execution from its start, or from after the id the client
+     * last saw, and ends the stream when the execution has ended and everything was sent.
+     */
+    private void events(HttpExchange exchange) throws IOException {
+        Executions.Run run = executions.latest();
+        if (run == null) {
+            error(exchange, 404, "No execution has run yet");
+            return;
+        }
+        int seen = 0;
+        String last = exchange.getRequestHeaders().getFirst("Last-Event-ID");
+        if (last != null) {
+            try {
+                seen = Math.max(0, Integer.parseInt(last.strip()));
+            } catch (NumberFormatException ignored) {
+                // Streams from the start.
+            }
+        }
+        exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=utf-8");
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        exchange.sendResponseHeaders(200, 0);
+        var out = exchange.getResponseBody();
+        try {
+            while (true) {
+                boolean news = run.awaitEventsAfter(seen, 10_000);
+                Executions.Snapshot snapshot = run.snapshot();
+                if (!news) {
+                    out.write(": keep-alive\n\n".getBytes(StandardCharsets.UTF_8));
+                    out.flush();
+                    continue;
+                }
+                for (Executions.Event event : snapshot.events()) {
+                    if (event.id() > seen) {
+                        String frame = "id: " + event.id() + "\nevent: " + event.name() + "\ndata: "
+                                + JSON.writeValueAsString(event.data()) + "\n\n";
+                        out.write(frame.getBytes(StandardCharsets.UTF_8));
+                        seen = event.id();
+                    }
+                }
+                out.flush();
+                if (snapshot.finished() && seen >= snapshot.events().size()) {
+                    return;
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (IOException e) {
+            // The client went away.
         }
     }
 
@@ -156,6 +262,14 @@ public final class FeatureServer implements AutoCloseable {
             }
         }
         throw new IllegalArgumentException("Missing parameter: " + name);
+    }
+
+    private static String optional(HttpExchange exchange, String name) {
+        try {
+            return param(exchange, name);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     private static JsonNode body(HttpExchange exchange) throws IOException {

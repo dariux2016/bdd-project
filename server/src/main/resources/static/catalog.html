@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Catalogo - bdd-project</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="page">
+  <main class="catalog-page">
+    <header>
+      <a href="index.html">&larr; Feature</a>
+      <span id="current">Catalogo delle frasi</span>
+    </header>
+    <form id="filters">
+      <label>Sorgente
+        <select id="source"><option value="">Tutte</option></select>
+      </label>
+      <label>Lingua
+        <select id="language">
+          <option value="">Tutte</option>
+          <option value="it">Italiano</option>
+          <option value="en">Inglese</option>
+        </select>
+      </label>
+      <label>Testo
+        <input id="text" type="search" placeholder="Cerca nel testo della frase">
+      </label>
+      <span id="count"></span>
+    </form>
+    <div id="message" hidden></div>
+    <table id="phrases">
+      <thead>
+        <tr><th>Frase</th><th>Lingua</th><th>Sorgente</th><th>Parametri</th><th>Origine</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </main>
+  <script src="catalog.js"></script>
+</body>
+</html>

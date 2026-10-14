@@ -230,7 +230,7 @@ class SourcesTest {
         assertThatThrownBy(() -> run("local"))
                 .isInstanceOf(ConfigurationException.class)
                 .hasMessage("Invalid sources.yaml: profiles.local.sources.orders.type: "
-                        + "no connector is installed for source type 'postgresql'; installed: fake, strict");
+                        + "no connector is installed for source type 'postgresql'; installed: fake, recording, strict");
     }
 
     @Test
@@ -341,7 +341,7 @@ class SourcesTest {
         assertThatThrownBy(() -> run("local"))
                 .isInstanceOf(ConfigurationException.class)
                 .hasMessage("Invalid sources.yaml: profiles.staging.sources.fruit.kind: "
-                        + "unknown property; allowed: type, readOnly, mask, config");
+                        + "unknown property; allowed: type, image, readOnly, mask, config");
     }
 
     @Test

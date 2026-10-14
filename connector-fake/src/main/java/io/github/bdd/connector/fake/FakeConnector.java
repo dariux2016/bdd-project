@@ -10,6 +10,7 @@ import io.github.bdd.plugin.ConfigType;
 import io.github.bdd.plugin.Connector;
 import io.github.bdd.plugin.Parameter;
 import io.github.bdd.plugin.ParameterType;
+import io.github.bdd.plugin.StepArgument;
 import io.github.bdd.plugin.Phrase;
 import io.github.bdd.plugin.Source;
 import io.github.bdd.plugin.Verification;
@@ -64,6 +65,10 @@ public final class FakeConnector implements Connector {
                 new Action("insertLater", ActionKind.WRITE,
                         List.of(SOURCE, new Parameter("json", ParameterType.STRING),
                                 new Parameter("delay", ParameterType.INTEGER)), this::insertLater),
+                new Action("insertText", ActionKind.WRITE,
+                        List.of(SOURCE), this::insertText, StepArgument.DOC_STRING),
+                new Action("insertFile", ActionKind.WRITE,
+                        List.of(SOURCE, new Parameter("json", ParameterType.FILE)), this::insertFile),
                 new Action("records", ActionKind.READ, List.of(SOURCE), this::records));
     }
 
@@ -76,11 +81,13 @@ public final class FakeConnector implements Connector {
 
     private static List<Phrase> english() {
         return List.of(
-                new Phrase("the fake store {source} has {key} set to {value}", "put"),
+                new Phrase("the fake store {source} has {key} set to {value}", "put").withId("fake.put"),
                 new Phrase("{amount} is added to {key} in the fake store {source}", "add"),
                 new Phrase("the fake store {source} should have {key} equal to {value}", "expect"),
                 new Phrase("the fake store {source} holds the record {json}", "insert"),
                 new Phrase("the fake store {source} will hold the record {json} after {delay} ms", "insertLater"),
+                new Phrase("the fake store {source} holds the record below", "insertText"),
+                new Phrase("the fake store {source} holds the record of the file {json}", "insertFile"),
                 new Phrase("a record exists in the fake store {source}", "records", Verification.EXISTS),
                 new Phrase("a record exists in the fake store {source} within {timeout} second(s)", "records",
                         Verification.EXISTS),
@@ -109,11 +116,13 @@ public final class FakeConnector implements Connector {
 
     private static List<Phrase> italian() {
         return List.of(
-                italian("lo store finto {source} ha {key} impostato a {value}", "put", null),
+                italian("lo store finto {source} ha {key} impostato a {value}", "put", null).withId("fake.put"),
                 italian("{amount} viene aggiunto a {key} nello store finto {source}", "add", null),
                 italian("lo store finto {source} deve avere {key} uguale a {value}", "expect", null),
                 italian("lo store finto {source} contiene il record {json}", "insert", null),
                 italian("lo store finto {source} conterrà il record {json} dopo {delay} ms", "insertLater", null),
+                italian("lo store finto {source} contiene il record qui sotto", "insertText", null),
+                italian("lo store finto {source} contiene il record del file {json}", "insertFile", null),
                 italian("esiste un record nello store finto {source}", "records", Verification.EXISTS),
                 italian("esiste un record nello store finto {source} entro {timeout} secondo/secondi", "records",
                         Verification.EXISTS),
@@ -176,8 +185,20 @@ public final class FakeConnector implements Connector {
         return insert(arguments, arguments.integer("delay"));
     }
 
+    private List<?> insertText(Arguments arguments) throws JsonProcessingException {
+        return insert(arguments, arguments.text(), 0);
+    }
+
+    private List<?> insertFile(Arguments arguments) throws JsonProcessingException {
+        return insert(arguments, arguments.document("json").text(), 0);
+    }
+
     private List<?> insert(Arguments arguments, int delayMillis) throws JsonProcessingException {
-        stored(arguments).add(new StoredRecord(json.readValue(arguments.string("json"), Object.class),
+        return insert(arguments, arguments.string("json"), delayMillis);
+    }
+
+    private List<?> insert(Arguments arguments, String content, int delayMillis) throws JsonProcessingException {
+        stored(arguments).add(new StoredRecord(json.readValue(content, Object.class),
                 System.nanoTime() + delayMillis * 1_000_000L));
         return List.of();
     }

@@ -25,4 +25,16 @@ public interface Connector {
 
     /** The phrases this connector contributes to the catalog, each targeting one of its actions. */
     List<Phrase> defaultPhrases();
+
+    /**
+     * Starts a container from an image, for a source that declares one instead of an address. The
+     * engine stops it at the end of the execution, or when the server stops.
+     *
+     * @return the container, whose {@link LocalContainer#config() configuration} stands for what
+     *     the source would otherwise set to reach its system
+     * @throws UnsupportedOperationException if this connector cannot run its system in a container
+     */
+    default LocalContainer startContainer(String image) {
+        throw new UnsupportedOperationException("Connector '" + sourceType() + "' cannot start containers");
+    }
 }

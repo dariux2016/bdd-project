@@ -1,0 +1,22 @@
+# Example workspace for the PostgreSQL connector.
+#
+#   run examples/postgresql --profile local
+#
+# The local profile starts a PostgreSQL container, which needs Docker, and destroys it at the end
+# of the run. The staging profile reaches a database that already exists and refuses any step that
+# writes to it, so only the verifications can run there.
+profiles:
+  local:
+    sources:
+      shop:
+        type: postgresql
+        image: postgres:16-alpine
+  staging:
+    sources:
+      shop:
+        type: postgresql
+        readOnly: true
+        config:
+          url: ${SHOP_URL}
+          username: ${SHOP_USER}
+          password: ${SHOP_PASSWORD}
