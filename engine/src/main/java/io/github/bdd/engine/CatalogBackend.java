@@ -36,5 +36,6 @@ final class CatalogBackend implements Backend {
             }
         });
         catalog.definitions().forEach(glue::addStepDefinition);
+        catalog.beforeHooks().forEach(glue::addBeforeHook);
     }
 }

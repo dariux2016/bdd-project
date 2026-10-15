@@ -1,16 +1,23 @@
 package io.github.bdd.engine;
 
+import io.cucumber.core.backend.HookDefinition;
+import io.cucumber.core.backend.StepDefinition;
+import io.cucumber.cucumberexpressions.Expression;
 import io.cucumber.cucumberexpressions.ExpressionFactory;
 import io.cucumber.cucumberexpressions.ParameterType;
 import io.cucumber.cucumberexpressions.ParameterTypeRegistry;
+import io.github.bdd.engine.CompositeStepDefinition.Step;
+import io.github.bdd.engine.CompositeStepDefinition.Takes;
 import io.github.bdd.plugin.Action;
 import io.github.bdd.plugin.Connector;
+import io.github.bdd.plugin.Parameter;
 import io.github.bdd.plugin.Phrase;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -20,13 +27,24 @@ import java.util.regex.Pattern;
 
 /**
  * The effective catalog: the default phrases of the connectors, those every catalog has, and the
- * aliases the workspace adds in its {@code catalog.yaml}.
+ * aliases and composite phrases the workspace adds in its {@code catalog.yaml}.
  *
  * <pre>
  * aliases:
  *   - phrase: "il negozio {source} contiene {key} = {value}"   # the new wording
  *     for: "the fake store {source} has {key} set to {value}"  # a default phrase it stands for
  *     language: it                                             # optional, en by default
+ * composites:
+ *   - phrase: "the customer {customer} has an order"           # parameters are texts in quotes
+ *     language: en                                             # optional, en by default
+ *     steps:                                                   # steps of the catalog, in order
+ *       - the fake store "orders" has "{customer}" set to 1
+ *       - step: a record exists in the fake store "orders"
+ *         table:                                               # or "{table}": that of the composite step
+ *           - [field, operator, value]
+ *           - [customer, equals, "{customer}"]
+ *       - step: a record of the fake store "orders" contains the JSON
+ *         docString: '{"customer": "{customer}"}'             # may cite {docString}: that of the composite step
  * </pre>
  */
 final class Catalog {
@@ -39,6 +57,7 @@ final class Catalog {
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{(\\w+)}");
     private static final Pattern OPTIONAL = Pattern.compile("\\(([^()]*)\\)");
     private static final Pattern ALTERNATION = Pattern.compile("[^\\s/{}()]+(?:/[^\\s/{}()]+)+");
+    private static final String PASSED_TABLE = "{" + CompositeStepDefinition.TABLE + "}";
 
     /** What the step definitions need to run, which describing the catalog does not. */
     record Context(Profile profile, Polling polling, Diagnostics diagnostics, CurrentStep currentStep,
@@ -50,16 +69,23 @@ final class Catalog {
     private record Declared(String origin, Connector connector, Phrase phrase) {
     }
 
+    private final Context context;
     private final List<Declared> declared = new ArrayList<>();
     private final List<PhraseStepDefinition> definitions = new ArrayList<>();
+    private final List<CompositeStepDefinition> composites = new ArrayList<>();
+
+    private Catalog(Context context) {
+        this.context = context;
+    }
 
     /**
      * @throws ConfigurationException if the catalog file is invalid, an alias does not fit the phrase
-     *     it stands for, or two phrases can match the same step
+     *     it stands for, a step of a composite phrase matches no phrase, composite phrases form a
+     *     cycle, or two phrases can match the same step
      * @throws IllegalStateException if a connector declares an invalid phrase
      */
     static Catalog load(Path workspace, List<Connector> connectors, Context context) {
-        Catalog catalog = new Catalog();
+        Catalog catalog = new Catalog(context);
         List<Connector> declaring = new ArrayList<>(connectors);
         declaring.add(new BuiltInPhrases());
         for (Connector connector : declaring) {
@@ -73,14 +99,18 @@ final class Catalog {
                 catalog.declared.add(new Declared(origin, connector, phrase));
             }
         }
-        catalog.addAliases(workspace);
+        Map<String, Object> file = file(workspace);
+        catalog.addAliases(file.get("aliases"));
 
         for (Declared phrase : catalog.declared) {
             catalog.definitions.add(new PhraseStepDefinition(phrase.connector().sourceType(), phrase.phrase(),
                     action(phrase.connector(), phrase.phrase()), context.profile(), context.polling(),
                     context.diagnostics(), context.currentStep(), context.variables()));
         }
+        catalog.addComposites(file.get("composites"));
         catalog.rejectAmbiguity();
+        catalog.resolveComposites();
+        catalog.rejectCycles();
         return catalog;
     }
 
@@ -92,20 +122,21 @@ final class Catalog {
                         + connector.sourceType() + "' targets unknown action '" + phrase.action() + "'"));
     }
 
-    private void addAliases(Path workspace) {
+    private static Map<String, Object> file(Path workspace) {
         Path file = workspace.resolve("catalog.yaml");
         if (!Files.isRegularFile(file)) {
-            return;
+            return Map.of();
         }
         Map<String, Object> root = YAML.mapping(YAML.parse(file), "");
-        YAML.allowOnly(root, "", "aliases");
-        Object aliases = root.get("aliases");
+        YAML.allowOnly(root, "", "aliases", "composites");
+        return root;
+    }
+
+    private void addAliases(Object aliases) {
         if (aliases == null) {
             return;
         }
-        if (!(aliases instanceof List<?> list)) {
-            throw YAML.invalid("aliases", "expected a list but was " + YamlFile.show(aliases));
-        }
+        List<?> list = list(aliases, "aliases");
         List<Declared> defaults = List.copyOf(declared);
         for (int i = 0; i < list.size(); i++) {
             String path = "aliases[" + i + "]";
@@ -113,12 +144,7 @@ final class Catalog {
             YAML.allowOnly(alias, path, "phrase", "for", "language");
             String pattern = text(alias.get("phrase"), path + ".phrase");
             String target = text(alias.get("for"), path + ".for");
-            Object language = alias.getOrDefault("language", Phrase.ENGLISH);
-            if (!(language instanceof String code) || !LANGUAGES.contains(code)) {
-                throw YAML.invalid(path + ".language", "expected one of "
-                        + String.join(", ", LANGUAGES.stream().sorted().toList()) + " but was "
-                        + YamlFile.show(language));
-            }
+            String code = language(alias, path);
 
             Declared stands = defaults.stream()
                     .filter(candidate -> candidate.phrase().pattern().equals(target))
@@ -132,6 +158,174 @@ final class Catalog {
             }
             declared.add(new Declared("workspace", stands.connector(), stands.phrase().in(code, pattern)));
         }
+    }
+
+    private void addComposites(Object section) {
+        if (section == null) {
+            return;
+        }
+        List<?> list = list(section, "composites");
+        for (int i = 0; i < list.size(); i++) {
+            String path = "composites[" + i + "]";
+            Map<String, Object> composite = YAML.mapping(list.get(i), path);
+            YAML.allowOnly(composite, path, "phrase", "language", "steps");
+            String pattern = text(composite.get("phrase"), path + ".phrase");
+            List<String> names = new ArrayList<>();
+            Matcher placeholder = PLACEHOLDER.matcher(pattern);
+            while (placeholder.find()) {
+                String name = placeholder.group(1);
+                if (name.equals(CompositeStepDefinition.TABLE) || name.equals(CompositeStepDefinition.DOC_STRING)) {
+                    throw YAML.invalid(path + ".phrase", "{" + name + "} is the " + (name.equals("table")
+                            ? "table" : "doc string") + " of the composite step, so no parameter can be named so");
+                }
+                if (names.contains(name)) {
+                    throw YAML.invalid(path + ".phrase", "the parameter {" + name + "} is used more than once");
+                }
+                names.add(name);
+            }
+
+            List<?> written = list(composite.get("steps"), path + ".steps");
+            if (written.isEmpty()) {
+                throw YAML.invalid(path + ".steps", "a composite phrase needs at least one step");
+            }
+            List<Step> steps = new ArrayList<>();
+            for (int s = 0; s < written.size(); s++) {
+                steps.add(step(written.get(s), path + ".steps[" + s + "]"));
+            }
+            boolean table = steps.stream().anyMatch(Step::passesTable);
+            boolean docString = steps.stream().anyMatch(step -> step.docString() != null
+                    && step.docString().contains("{" + CompositeStepDefinition.DOC_STRING + "}"));
+            if (table && docString) {
+                throw YAML.invalid(path + ".steps", "the steps use both the table and the doc string of the "
+                        + "composite step, which can only have one of them");
+            }
+            Takes takes = table ? Takes.TABLE : docString ? Takes.DOC_STRING : Takes.NOTHING;
+            composites.add(new CompositeStepDefinition(pattern, language(composite, path), path, names, steps,
+                    takes, context.currentStep()));
+        }
+    }
+
+    /** A step of a composite phrase: its text alone, or a mapping with its table or doc string. */
+    private static Step step(Object written, String path) {
+        if (written instanceof String text) {
+            return new Step(text(text, path), null, false, null);
+        }
+        Map<String, Object> step = YAML.mapping(written, path);
+        YAML.allowOnly(step, path, "step", "table", "docString");
+        String text = text(step.get("step"), path + ".step");
+        Object table = step.get("table");
+        Object docString = step.get("docString");
+        if (table != null && docString != null) {
+            throw YAML.invalid(path, "a step has a table or a doc string, not both");
+        }
+        if (docString != null) {
+            if (!(docString instanceof String content)) {
+                throw YAML.invalid(path + ".docString", "expected a text but was " + YamlFile.show(docString));
+            }
+            return new Step(text, null, false, content);
+        }
+        if (table == null) {
+            return new Step(text, null, false, null);
+        }
+        if (PASSED_TABLE.equals(table)) {
+            return new Step(text, null, true, null);
+        }
+        if (!(table instanceof List<?> rows) || rows.isEmpty()) {
+            throw YAML.invalid(path + ".table", "expected a list of rows, or '" + PASSED_TABLE
+                    + "' for the table of the composite step, but was " + YamlFile.show(table));
+        }
+        List<List<String>> cells = new ArrayList<>();
+        for (int r = 0; r < rows.size(); r++) {
+            if (!(rows.get(r) instanceof List<?> row)) {
+                throw YAML.invalid(path + ".table[" + r + "]", "expected a list of cells but was "
+                        + YamlFile.show(rows.get(r)));
+            }
+            List<String> cellsOfRow = new ArrayList<>();
+            for (Object cell : row) {
+                if (cell instanceof Map<?, ?> || cell instanceof List<?>) {
+                    throw YAML.invalid(path + ".table[" + r + "]", "expected cells but one was " + YamlFile.show(cell));
+                }
+                // An empty cell reaches the phrase as null, as it does from a feature.
+                cellsOfRow.add(cell == null ? null : cell.toString());
+            }
+            if (!cells.isEmpty() && cellsOfRow.size() != cells.getFirst().size()) {
+                throw YAML.invalid(path + ".table[" + r + "]", "the rows of a table need as many cells as the first");
+            }
+            cells.add(cellsOfRow);
+        }
+        return new Step(text, cells, false, null);
+    }
+
+    /** Finds the phrase each step of a composite phrase leads to, among all those of the catalog. */
+    private void resolveComposites() {
+        ExpressionFactory factory = expressionFactory();
+        List<StepDefinition> all = definitions();
+        List<Expression> expressions = all.stream()
+                .map(definition -> factory.createExpression(definition.getPattern()))
+                .toList();
+        for (CompositeStepDefinition composite : composites) {
+            for (int s = 0; s < composite.steps().size(); s++) {
+                Step step = composite.steps().get(s);
+                String sample = composite.sample(step);
+                int found = -1;
+                for (int d = 0; d < all.size() && found < 0; d++) {
+                    if (expressions.get(d).match(sample).isPresent()) {
+                        found = d;
+                    }
+                }
+                if (found < 0) {
+                    throw YAML.invalid(composite.path() + ".steps[" + s + "]", "no phrase of the catalog matches '"
+                            + step.text() + "'; a parameter of the composite phrase is written {name}, in quotes "
+                            + "where the phrase expects a text");
+                }
+                composite.leadsTo(all.get(found), expressions.get(found));
+            }
+        }
+    }
+
+    /** A composite phrase that ends up running itself would never end. */
+    private void rejectCycles() {
+        Set<CompositeStepDefinition> acyclic = new HashSet<>();
+        for (CompositeStepDefinition composite : composites) {
+            rejectCycles(composite, new LinkedHashSet<>(), acyclic);
+        }
+    }
+
+    private static void rejectCycles(CompositeStepDefinition composite, LinkedHashSet<CompositeStepDefinition> chain,
+            Set<CompositeStepDefinition> acyclic) {
+        if (acyclic.contains(composite)) {
+            return;
+        }
+        if (chain.contains(composite)) {
+            List<CompositeStepDefinition> cycle = new ArrayList<>(chain);
+            cycle = new ArrayList<>(cycle.subList(cycle.indexOf(composite), cycle.size()));
+            cycle.add(composite);
+            throw YAML.invalid(cycle.getFirst().path(), "the composite phrases form a cycle: " + String.join(" -> ",
+                    cycle.stream().map(phrase -> "'" + phrase.pattern() + "'").toList()));
+        }
+        chain.add(composite);
+        for (CompositeStepDefinition inner : composite.composites()) {
+            rejectCycles(inner, chain, acyclic);
+        }
+        chain.remove(composite);
+        acyclic.add(composite);
+    }
+
+    private static List<?> list(Object value, String path) {
+        if (!(value instanceof List<?> list)) {
+            throw YAML.invalid(path, "expected a list but was " + YamlFile.show(value));
+        }
+        return list;
+    }
+
+    private static String language(Map<String, Object> mapping, String path) {
+        Object language = mapping.getOrDefault("language", Phrase.ENGLISH);
+        if (!(language instanceof String code) || !LANGUAGES.contains(code)) {
+            throw YAML.invalid(path + ".language", "expected one of "
+                    + String.join(", ", LANGUAGES.stream().sorted().toList()) + " but was "
+                    + YamlFile.show(language));
+        }
+        return code;
     }
 
     private static String text(Object value, String path) {
@@ -154,25 +348,31 @@ final class Catalog {
         return names.isEmpty() ? "none" : String.join(", ", names.stream().sorted().map(n -> "{" + n + "}").toList());
     }
 
-    /** Two phrases that can match the same step would leave Cucumber to refuse it at execution. */
-    private void rejectAmbiguity() {
+    private static ExpressionFactory expressionFactory() {
         ParameterTypeRegistry registry = new ParameterTypeRegistry(Locale.ENGLISH);
         registry.defineParameterType(integerOrVariable());
-        ExpressionFactory factory = new ExpressionFactory(registry);
-        List<Pattern> regexps = definitions.stream()
+        return new ExpressionFactory(registry);
+    }
+
+    /** Two phrases that can match the same step would leave Cucumber to refuse it at execution. */
+    private void rejectAmbiguity() {
+        ExpressionFactory factory = expressionFactory();
+        List<StepDefinition> all = definitions();
+        List<String> described = new ArrayList<>();
+        declared.forEach(phrase -> described.add("'" + phrase.phrase().pattern() + "' (" + phrase.origin() + ")"));
+        composites.forEach(composite -> described.add("'" + composite.pattern() + "' (workspace)"));
+        List<Pattern> regexps = all.stream()
                 .map(definition -> factory.createExpression(definition.getPattern()).getRegexp())
                 .toList();
-        List<List<String>> samples = definitions.stream()
+        List<List<String>> samples = all.stream()
                 .map(definition -> samples(definition.getPattern()))
                 .toList();
-        for (int first = 0; first < definitions.size(); first++) {
-            for (int second = first + 1; second < definitions.size(); second++) {
+        for (int first = 0; first < all.size(); first++) {
+            for (int second = first + 1; second < all.size(); second++) {
                 if (matchesAny(regexps.get(first), samples.get(second))
                         || matchesAny(regexps.get(second), samples.get(first))) {
-                    throw new ConfigurationException("Ambiguous catalog: the phrases '"
-                            + declared.get(first).phrase().pattern() + "' (" + declared.get(first).origin()
-                            + ") and '" + declared.get(second).phrase().pattern() + "' ("
-                            + declared.get(second).origin() + ") can match the same step");
+                    throw new ConfigurationException("Ambiguous catalog: the phrases " + described.get(first)
+                            + " and " + described.get(second) + " can match the same step");
                 }
             }
         }
@@ -216,8 +416,16 @@ final class Catalog {
                 (String text) -> text);
     }
 
-    List<PhraseStepDefinition> definitions() {
-        return List.copyOf(definitions);
+    /** The phrases of the connectors and of the engine, their aliases, then the composite phrases. */
+    List<StepDefinition> definitions() {
+        List<StepDefinition> all = new ArrayList<>(definitions);
+        all.addAll(composites);
+        return all;
+    }
+
+    /** The hooks the step definitions need: one to give the reports the detail of the composite phrases. */
+    List<HookDefinition> beforeHooks() {
+        return composites.isEmpty() ? List.of() : List.of(context.currentStep().scenarioHook());
     }
 
     List<CatalogEntry> entries() {
@@ -226,7 +434,14 @@ final class Catalog {
             Declared phrase = declared.get(i);
             entries.add(new CatalogEntry(phrase.phrase().pattern(), phrase.phrase().language(), phrase.origin(),
                     phrase.connector().sourceType() + "." + phrase.phrase().action(),
-                    phrase.phrase().verification(), definitions.get(i).parameters()));
+                    phrase.phrase().verification(), definitions.get(i).parameters(), List.of()));
+        }
+        for (CompositeStepDefinition composite : composites) {
+            entries.add(new CatalogEntry(composite.pattern(), composite.language(), "workspace", null, null,
+                    composite.parameters().stream()
+                            .map(name -> new Parameter(name, io.github.bdd.plugin.ParameterType.STRING))
+                            .toList(),
+                    composite.steps().stream().map(Step::text).toList()));
         }
         return entries;
     }

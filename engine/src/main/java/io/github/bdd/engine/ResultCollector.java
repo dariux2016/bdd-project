@@ -18,11 +18,13 @@ import java.util.List;
 final class ResultCollector implements EventListener {
 
     private final URI workspace;
+    private final CurrentStep currentStep;
     private final List<ScenarioResult> scenarios = new ArrayList<>();
     private List<StepResult> steps;
 
-    ResultCollector(Path workspace) {
+    ResultCollector(Path workspace, CurrentStep currentStep) {
         this.workspace = workspace.toUri();
+        this.currentStep = currentStep;
     }
 
     @Override
@@ -39,7 +41,8 @@ final class ResultCollector implements EventListener {
                     testStep.getStep().getKeyword().strip(),
                     testStep.getStep().getText(),
                     status,
-                    status == Status.FAILED ? message(event.getResult().getError()) : null));
+                    status == Status.FAILED ? message(event.getResult().getError()) : null,
+                    currentStep.innerSteps()));
         }
     }
 

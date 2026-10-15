@@ -201,7 +201,35 @@ aliases:
     language: en                                             # facoltativo, en di default
 ```
 
-Un alias deve usare gli stessi parametri della frase che rappresenta, altrimenti il caricamento fallisce con un errore che li elenca. Due frasi i cui pattern possono corrispondere allo stesso step sono segnalate come ambigue, indicando entrambe e la loro origine, prima di eseguire qualsiasi scenario. `Engine.catalog(workspace)` restituisce il catalogo effettivo: per ogni frase pattern, lingua, origine (`connector:<tipo>`, `engine`, `workspace`), bersaglio (`<tipo>.<azione>`), verifica e parametri.
+Un alias deve usare gli stessi parametri della frase che rappresenta, altrimenti il caricamento fallisce con un errore che li elenca. Due frasi i cui pattern possono corrispondere allo stesso step sono segnalate come ambigue, indicando entrambe e la loro origine, prima di eseguire qualsiasi scenario. `Engine.catalog(workspace)` restituisce il catalogo effettivo: per ogni frase pattern, lingua, origine (`connector:<tipo>`, `engine`, `workspace`), bersaglio (`<tipo>.<azione>`), verifica, parametri e, per le frasi composte, gli step in cui si espandono.
+
+### Frasi composte
+
+Una frase composta è una frase di business che si espande in una sequenza di step del catalogo, eseguiti in ordine: chi scrive `il cliente "Anna" ha un ordine confermato` non deve conoscere tabelle e topic. Sta in `catalog.yaml`, accanto agli alias:
+
+```yaml
+composites:
+  - phrase: "the customer {customer} has a confirmed order"   # i parametri sono testi tra virgolette
+    language: en                                             # facoltativo, en di default
+    steps:
+      - >-
+        the fake store "ordini" holds the record '{"customer": "{customer}", "status": "CONFIRMED"}'
+      - step: a record exists in the fake store "ordini"
+        table:                                               # una tabella scritta nel catalogo
+          - [field, operator, value]
+          - [customer, equals, "{customer}"]
+      - step: a record of the fake store "ordini" contains the JSON
+        docString: |
+          {"customer": "{customer}"}
+```
+
+- Gli step interni citano i parametri della frase composta come `{nome}` nel testo, nelle tabelle e nei testi multilinea; dove la frase interna si aspetta un testo, il parametro va tra virgolette (`"{customer}"`).
+- Uno step interno può ricevere la tabella dello step composto con `table: "{table}"`, oppure citarne il testo multilinea con `{docString}` nel proprio `docString`. Una frase composta usa l'una o l'altro, non entrambi.
+- Uno step interno può essere a sua volta una frase composta, un alias o una frase di qualsiasi connettore.
+- Al caricamento, prima di eseguire qualsiasi scenario, sono rifiutati uno step interno che non corrisponde a nessuna frase del catalogo e i cicli, diretti o indiretti, indicando la catena (`'A' -> 'B' -> 'A'`).
+- Le variabili salvate dagli step interni restano disponibili nel resto dello scenario.
+- Se uno step interno fallisce, i successivi non vengono eseguiti e lo step composto fallisce indicando quale step interno è fallito e perché: `Step 2 of the composite phrase '...', '<step>', failed: <motivo>`. Gli errori di una tabella scritta nel catalogo citano la sua posizione, es. `catalog.yaml: composites[0].steps[1].table[2]`.
+- Nei report la frase composta è un solo step; l'elenco degli step interni con il loro esito è nel suo output (`cucumber.json`, `report.html`), in `StepResult.steps()` e sotto lo step nell'output di `run`.
 
 ## Selezione
 

@@ -81,6 +81,7 @@ public final class Main {
             out.printf("%-10s %s:%d %s%n", scenario.status(), scenario.feature(), scenario.line(), scenario.name());
             for (StepResult step : scenario.steps()) {
                 out.printf("  %-10s %s %s%n", step.status(), step.keyword(), step.text());
+                printInner(step.steps(), "    ", out);
                 if (step.error() != null) {
                     step.error().lines().forEach(line -> out.printf("  %-10s %s%n", "", line));
                 }
@@ -90,6 +91,14 @@ public final class Main {
         out.println(summary(result.scenarios()));
         if (result.reports() != null) {
             out.println("Reports: " + result.reports());
+        }
+    }
+
+    /** The steps of a composite phrase, below it; why one failed is in the error of the composite step. */
+    private static void printInner(List<StepResult> steps, String indent, PrintStream out) {
+        for (StepResult step : steps) {
+            out.printf("  %-10s %s%s %s%n", "", indent, step.status().name().toLowerCase(), step.text());
+            printInner(step.steps(), indent + "  ", out);
         }
     }
 
