@@ -33,6 +33,8 @@ final class CompositeStepDefinition implements StepDefinition {
     static final String DOC_STRING = "docString";
 
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{(\\w+)}");
+    /** A parameter in the steps: <code>{name}</code>, but not the <code>${name}</code> of a scenario variable. */
+    private static final Pattern PARAMETER = Pattern.compile("(?<!\\$)\\{(\\w+)}");
 
     /** What a composite step carries besides its parameters, for its steps to use. */
     enum Takes { NOTHING, TABLE, DOC_STRING }
@@ -252,7 +254,7 @@ final class CompositeStepDefinition implements StepDefinition {
         if (text == null) {
             return null;
         }
-        return PLACEHOLDER.matcher(text).replaceAll(match -> Matcher.quoteReplacement(
+        return PARAMETER.matcher(text).replaceAll(match -> Matcher.quoteReplacement(
                 values.getOrDefault(match.group(1), match.group())));
     }
 

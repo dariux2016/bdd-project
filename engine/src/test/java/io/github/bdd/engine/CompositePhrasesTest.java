@@ -312,6 +312,33 @@ class CompositePhrasesTest {
     }
 
     @Test
+    void variableNamedLikeAParameterIsNotReplacedByIt() throws IOException {
+        catalog("""
+                composites:
+                  - phrase: "the order {orderId} is referenced"
+                    steps:
+                      - >-
+                        the fake store "shop" holds the record '{"ref": "${orderId}", "label": "{orderId}"}'
+                """);
+        ExecutionResult result = run("""
+                Feature: Composite
+                  Scenario: Variable and parameter with one name
+                    Given the fake store "shop" holds the record '{"id": 42}'
+                    And I save the "id" of a record of the fake store "shop" as "orderId"
+                      | field | operator | value |
+                      | id    | equals   | 42    |
+                    When the order "label" is referenced
+                    Then a record exists in the fake store "shop"
+                      | field | operator | value |
+                      | ref   | equals   | 42    |
+                      | label | equals   | label |
+                """);
+
+        assertThat(errors(result)).isEmpty();
+        assertThat(result.successful()).isTrue();
+    }
+
+    @Test
     void failingStepFailsTheCompositeSayingWhichAndWhy() throws IOException {
         catalog("""
                 composites:
