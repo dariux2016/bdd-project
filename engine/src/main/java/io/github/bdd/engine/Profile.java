@@ -164,8 +164,16 @@ final class Profile {
                 declaration.masked());
     }
 
-    /** Replaces each <code>${NAME}</code> of a text value with the environment variable of that name. */
+    /**
+     * Replaces each <code>${NAME}</code> of a text value, or of the text values of a mapping, with
+     * the environment variable of that name.
+     */
     private static Object resolve(Object value, String path, Map<String, String> environment) {
+        if (value instanceof Map<?, ?> map) {
+            Map<Object, Object> resolved = new LinkedHashMap<>();
+            map.forEach((key, entry) -> resolved.put(key, resolve(entry, path + "." + key, environment)));
+            return resolved;
+        }
         if (!(value instanceof String text)) {
             return value;
         }
@@ -209,11 +217,20 @@ final class Profile {
                     return Boolean.valueOf(text.strip());
                 }
             }
+            case MAP -> {
+                if (value instanceof Map<?, ?> map) {
+                    Map<String, String> texts = new LinkedHashMap<>();
+                    map.forEach((key, entry) -> texts.put(String.valueOf(key),
+                            (String) convert(entry, ConfigType.STRING, path + "." + key)));
+                    return texts;
+                }
+            }
         }
         String expected = switch (type) {
             case STRING -> "a text (write it between quotes)";
             case INTEGER -> "an integer";
             case BOOLEAN -> "true or false";
+            case MAP -> "a mapping of names to texts";
         };
         throw YAML.invalid(path, "expected " + expected + " but was " + YamlFile.show(value));
     }

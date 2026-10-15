@@ -1,0 +1,15 @@
+# The orders service of the examples. The test that runs them starts it on a free port, which it
+# passes as ORDERS_URL, and gives the token it expects as ORDERS_TOKEN.
+profiles:
+  local:
+    sources:
+      orders:
+        type: http
+        mask: [headers.set-cookie]
+        config:
+          url: ${ORDERS_URL}/api
+          headers:
+            Authorization: Bearer ${ORDERS_TOKEN}
+            Accept: application/json
+          connectTimeoutMillis: 2000
+          responseTimeoutMillis: 5000
