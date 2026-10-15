@@ -133,6 +133,10 @@ final class Connectors implements AutoCloseable {
     private void add(ServiceLoader<Connector> loader, String origin) {
         try {
             for (Connector connector : loader) {
+                // A dependency the connector lacks may only show when it is first used.
+                connector.sourceType();
+                connector.actions();
+                connector.defaultPhrases();
                 connectors.add(connector);
                 origins.put(connector, origin);
             }

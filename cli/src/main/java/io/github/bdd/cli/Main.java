@@ -66,7 +66,7 @@ public final class Main {
         ExecutionResult result;
         try {
             result = Engine.run(new ExecutionRequest(Path.of(workspace == null ? "" : workspace), profile,
-                    System.getenv(), new Selection(paths, tags)));
+                    System.getenv(), new Selection(paths, tags), failOnPending));
         } catch (RuntimeException e) {
             err.println(e.getMessage());
             return EXIT_ERROR;

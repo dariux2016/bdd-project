@@ -12,12 +12,19 @@ import java.util.Map;
  * @param environment the environment variables that resolve the <code>${NAME}</code> values of the
  *     configuration; not copied, so that the lookup stays case-insensitive where the platform's is
  * @param selection what to execute of the workspace; {@code null} for all of it
+ * @param failOnPending whether a pending scenario makes the execution unsuccessful, as a failed one
+ *     does, in the reports too
  */
 public record ExecutionRequest(Path workspace, String profile, Map<String, String> environment,
-        Selection selection) {
+        Selection selection, boolean failOnPending) {
 
     public ExecutionRequest {
         selection = selection == null ? Selection.ALL : selection;
+    }
+
+    /** A request in which pending scenarios do not make the execution unsuccessful. */
+    public ExecutionRequest(Path workspace, String profile, Map<String, String> environment, Selection selection) {
+        this(workspace, profile, environment, selection, false);
     }
 
     /** A request for the whole workspace. */

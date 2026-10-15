@@ -142,8 +142,10 @@ final class Reports {
                 failure.getParentNode().replaceChild(skipped, failure);
             }
             Element suite = document.getDocumentElement();
-            suite.setAttribute("failures", String.valueOf(Integer.parseInt(suite.getAttribute("failures")) - pending.size()));
-            suite.setAttribute("skipped", String.valueOf(Integer.parseInt(suite.getAttribute("skipped")) + pending.size()));
+            int failed = Integer.parseInt(suite.getAttribute("failures")) - pending.size();
+            int skipped = Integer.parseInt(suite.getAttribute("skipped")) + pending.size();
+            suite.setAttribute("failures", String.valueOf(failed));
+            suite.setAttribute("skipped", String.valueOf(skipped));
             TransformerFactory.newInstance().newTransformer()
                     .transform(new DOMSource(document), new StreamResult(file.toFile()));
         } catch (IOException e) {
@@ -155,8 +157,7 @@ final class Reports {
 
     /** Writes {@code summary.json}, the machine-readable outcome of the execution. */
     void writeSummary(String profile, Selection selection, Instant start, Duration duration,
-            ExecutionResult result) {
-        List<ScenarioResult> scenarios = result.scenarios();
+            List<ScenarioResult> scenarios, boolean successful) {
         Map<String, Object> counts = new LinkedHashMap<>();
         counts.put("total", scenarios.size());
         for (Status status : Status.values()) {
@@ -174,8 +175,7 @@ final class Reports {
         summary.put("durationMillis", duration.toMillis());
         summary.put("counts", counts);
         summary.put("noScenarioSelected", scenarios.isEmpty());
-        // Pending scenarios count as successful here, as they do by default for the exit code of run.
-        summary.put("successful", result.successful());
+        summary.put("successful", successful);
         try {
             new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
                     .writeValue(directory.resolve("summary.json").toFile(), summary);

@@ -82,10 +82,10 @@ final class Catalog {
     }
 
     /**
-     * @param pending where the catalog declares the pending phrase this one was, with the types it
+     * @param activated where the catalog declares the pending phrase this one was, with the types it
      *     gives its parameters; {@code null} if it was never pending
      */
-    private record Declared(String origin, Connector connector, Phrase phrase, Activated pending) {
+    private record Declared(String origin, Connector connector, Phrase phrase, Activated activated) {
 
         Declared(String origin, Connector connector, Phrase phrase) {
             this(origin, connector, phrase, null);
@@ -136,7 +136,7 @@ final class Catalog {
             PhraseStepDefinition definition = new PhraseStepDefinition(phrase.connector().sourceType(),
                     phrase.phrase(), action(phrase.connector(), phrase.phrase()), context.profile(), context.polling(),
                     context.diagnostics(), context.currentStep(), context.variables());
-            if (phrase.pending() != null) {
+            if (phrase.activated() != null) {
                 requireSameParameters(phrase, definition);
             }
             catalog.definitions.add(definition);
@@ -236,11 +236,12 @@ final class Catalog {
             if (implementing.isEmpty()) {
                 pending.add(new PendingStepDefinition(pattern, code, id, parameters, context.currentStep()));
             } else if (implementing.stream().noneMatch(phrase -> phrase.phrase().pattern().equals(pattern))) {
-                Declared stands = implementing.stream()
+                Declared implementation = implementing.stream()
                         .filter(phrase -> phrase.phrase().language().equals(code))
                         .findFirst()
                         .orElse(implementing.getFirst());
-                declared.add(new Declared("workspace", stands.connector(), stands.phrase().in(code, pattern),
+                declared.add(new Declared("workspace", implementation.connector(),
+                        implementation.phrase().in(code, pattern),
                         new Activated(path, parameters)));
             }
             // Otherwise a connector declares the very wording, which takes the place of the pending phrase.
@@ -254,7 +255,8 @@ final class Catalog {
         Matcher placeholder = PLACEHOLDER.matcher(pattern);
         while (placeholder.find()) {
             if (names.contains(placeholder.group(1))) {
-                throw YAML.invalid(path + ".phrase", "the parameter {" + placeholder.group(1) + "} is used more than once");
+                throw YAML.invalid(path + ".phrase",
+                        "the parameter {" + placeholder.group(1) + "} is used more than once");
             }
             names.add(placeholder.group(1));
         }
@@ -288,9 +290,9 @@ final class Catalog {
                         && parameter.type() != io.github.bdd.plugin.ParameterType.TABLE)
                 .forEach(parameter -> expected.put(parameter.name(), written(parameter)));
         Map<String, String> given = new TreeMap<>();
-        phrase.pending().parameters().forEach(parameter -> given.put(parameter.name(), written(parameter)));
+        phrase.activated().parameters().forEach(parameter -> given.put(parameter.name(), written(parameter)));
         if (!given.equals(expected)) {
-            throw YAML.invalid(phrase.pending().path(), "the pending phrase '" + phrase.phrase().pattern()
+            throw YAML.invalid(phrase.activated().path(), "the pending phrase '" + phrase.phrase().pattern()
                     + "' is now implemented by the phrase with id '" + phrase.phrase().id() + "' of connector '"
                     + phrase.connector().sourceType() + "', which takes " + describe(expected)
                     + ", but the pending phrase takes " + describe(given));

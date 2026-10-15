@@ -114,6 +114,15 @@ class PendingPhrasesTest {
 
         assertThat(result.successful()).isTrue();
         assertThat(result.successful(true)).isFalse();
+        assertThat(summary(result).get("successful").asBoolean()).isTrue();
+
+        ExecutionResult failing = Engine.run(new ExecutionRequest(workspace, "local", Map.of(), null, true));
+        assertThat(summary(failing).get("successful").asBoolean()).isFalse();
+        assertThat(Files.readString(failing.reports().resolve("junit.xml"))).contains("failures=\"1\"");
+    }
+
+    private static JsonNode summary(ExecutionResult result) throws IOException {
+        return new ObjectMapper().readTree(result.reports().resolve("summary.json").toFile());
     }
 
     @Test

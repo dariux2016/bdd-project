@@ -101,10 +101,13 @@ public final class Engine {
                 .run();
 
         ExecutionResult result = collector.result();
-        if (result.scenarios().stream().anyMatch(scenario -> scenario.status() == Status.PENDING)) {
+        // Unless pending scenarios fail the execution, JUnit XML must not count them as failures.
+        if (!request.failOnPending()
+                && result.scenarios().stream().anyMatch(scenario -> scenario.status() == Status.PENDING)) {
             reports.reportPendingAsSkipped();
         }
-        reports.writeSummary(request.profile(), selection, start, Duration.between(start, Instant.now()), result);
+        reports.writeSummary(request.profile(), selection, start, Duration.between(start, Instant.now()),
+                result.scenarios(), result.successful(request.failOnPending()));
         reports.prune();
         return new ExecutionResult(result.scenarios(), reports.directory());
     }
