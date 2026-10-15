@@ -25,4 +25,12 @@ public interface Connector {
 
     /** The phrases this connector contributes to the catalog, each targeting one of its actions. */
     List<Phrase> defaultPhrases();
+
+    /**
+     * Called before each scenario of the execution. A connector that keeps what a scenario did, such
+     * as the last response of a service, forgets it here, so that a scenario never sees what another
+     * did.
+     */
+    default void scenarioStarted() {
+    }
 }

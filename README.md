@@ -9,6 +9,7 @@ Stato: in costruzione. La specifica è nella issue #1.
 - `plugin-api`: il contratto dei connettori.
 - `engine`: esegue le feature di un workspace con le frasi dei connettori installati.
 - `connector-fake`: connettore finto in memoria, supporto di test del motore.
+- `connector-http`: connettore per i servizi HTTP (vedi [Connettore HTTP](#connettore-http)).
 - `cli`: punto d'ingresso; `run [workspace] [--profile <nome>] [--path <percorso>]... [--tags <espressione>]` esegue le feature in `<workspace>/features` sulle sorgenti del profilo scelto; `serve [workspace] [--port <n>]` avvia l'interfaccia web (vedi sotto).
 - `server`: API HTTP sulla cartella `features` di un workspace e UI statica, nello stesso artefatto.
 
@@ -202,6 +203,77 @@ aliases:
 ```
 
 Un alias deve usare gli stessi parametri della frase che rappresenta, altrimenti il caricamento fallisce con un errore che li elenca. Due frasi i cui pattern possono corrispondere allo stesso step sono segnalate come ambigue, indicando entrambe e la loro origine, prima di eseguire qualsiasi scenario. `Engine.catalog(workspace)` restituisce il catalogo effettivo: per ogni frase pattern, lingua, origine (`connector:<tipo>`, `engine`, `workspace`), bersaglio (`<tipo>.<azione>`), verifica e parametri.
+
+## Connettore HTTP
+
+Una sorgente di tipo `http` rappresenta un servizio: indirizzo di base, header inviati con ogni richiesta, credenziali e tempi massimi.
+
+```yaml
+profiles:
+  local:
+    sources:
+      ordini:
+        type: http
+        mask: [body.token, headers.set-cookie]
+        config:
+          url: http://localhost:8080/api       # obbligatorio; i percorsi delle frasi si aggiungono a questo
+          headers:                             # facoltativo: header di default
+            Authorization: Bearer ${ORDINI_TOKEN}
+            Accept: application/json
+          username: ${ORDINI_UTENTE}            # facoltativi, insieme: autenticazione Basic
+          password: ${ORDINI_PASSWORD}
+          connectTimeoutMillis: 2000           # default 10000
+          responseTimeoutMillis: 5000          # default 30000
+```
+
+Allo scadere di un tempo massimo lo step fallisce con un errore che nomina servizio, richiesta e attesa, es. `The HTTP service 'ordini' did not respond to GET http://localhost:8080/api/ordini/1 within 5000 ms`.
+
+### Richieste
+
+```gherkin
+When I send a POST request to "/orders?notify=true" on the HTTP service "ordini"
+  """
+  {"customer": "Ada", "sku": "${uuid:sku}"}
+  """
+```
+
+- Metodi: `GET`, `HEAD`, `OPTIONS` (`an OPTIONS`), `POST`, `PUT`, `PATCH`, `DELETE`. In italiano: `invio una richiesta POST a "/orders" sul servizio HTTP "ordini"`.
+- Il percorso può contenere la query string; i caratteri non ammessi in un URL, come gli spazi, sono codificati, mentre quelli già codificati (`%2B`) restano come sono.
+- Il corpo è il testo multilinea dello step; senza un `Content-Type` esplicito vale `application/json` se è JSON, altrimenti `text/plain; charset=UTF-8`.
+- Al posto del corpo lo step può avere una tabella di header `| header | value |` (`| header | valore |`), che vale solo per quella richiesta. Gli header che valgono per tutte le richieste successive dello scenario si danno con `the requests to the HTTP service "ordini" have the headers` (`le richieste al servizio HTTP "ordini" hanno gli header`). A parità di nome prevale lo step, poi lo scenario, poi la sorgente.
+- Su una sorgente `readOnly` le richieste `POST`, `PUT`, `PATCH` e `DELETE` falliscono senza essere inviate; `GET`, `HEAD` e `OPTIONS` sono ammesse.
+
+### Verifiche sulla risposta
+
+Le verifiche riguardano l'ultima risposta ricevuta dal servizio nello scenario, vista come il record `{"status": 201, "headers": {"location": "..."}, "body": ...}`: i nomi degli header sono in minuscolo, il corpo è JSON quando lo è, altrimenti testo. La risposta è già arrivata, quindi queste verifiche non riprovano: falliscono subito.
+
+```gherkin
+Then the response of the HTTP service "ordini" has status 201
+And the response of the HTTP service "ordini" matches
+  | field            | operator | value             |
+  | headers.location | regex    | ^/api/orders/\d+$ |
+  | body.status      | equals   | NEW               |
+And the response body of the HTTP service "ordini" equals the JSON ignoring "id, createdAt"
+  """
+  {"customer": "Ada", "status": "NEW"}
+  """
+When I save the "body.id" of the response of the HTTP service "ordini" as "orderId"
+```
+
+`contains the JSON` confronta in modo parziale. In italiano: `la risposta del servizio HTTP "ordini" ha lo status 201`, `... corrisponde`, `il corpo della risposta del servizio HTTP "ordini" è uguale al JSON` / `contiene il JSON` (`ignorando "..."`), `salvo "body.id" della risposta del servizio HTTP "ordini" come "idOrdine"`.
+
+### Ripetere una chiamata
+
+Per attendere che un'elaborazione asincrona si concluda, una frase ripete una `GET` finché la risposta soddisfa il filtro, con il timeout e l'intervallo delle verifiche; l'ultima risposta resta disponibile per gli step successivi.
+
+```gherkin
+When I send GET requests to "/orders/${orderId}" on the HTTP service "ordini" until the response matches within 30 seconds
+  | field       | operator | value |
+  | status      | equals   | 200   |
+  | body.status | equals   | PAID  |
+```
+
+In italiano: `invio richieste GET a "/orders/${idOrdine}" sul servizio HTTP "ordini" finché la risposta corrisponde entro 30 secondi`. Le feature di esempio, in inglese e in italiano, sono in `connector-http/src/test/resources/examples` e girano nei test contro un servizio di prova.
 
 ## Selezione
 

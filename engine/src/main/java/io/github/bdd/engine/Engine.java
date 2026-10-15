@@ -6,6 +6,8 @@ import io.cucumber.core.options.RuntimeOptions;
 import io.cucumber.core.options.RuntimeOptionsBuilder;
 import io.cucumber.core.runtime.FeaturePathFeatureSupplier;
 import io.cucumber.core.runtime.Runtime;
+import io.cucumber.plugin.EventListener;
+import io.cucumber.plugin.event.TestCaseStarted;
 import io.github.bdd.plugin.Connector;
 
 import java.nio.file.Files;
@@ -67,6 +69,8 @@ public final class Engine {
                 profile, Polling.load(workspace), Diagnostics.load(workspace), currentStep, variables));
         CatalogBackend backend = new CatalogBackend(catalog);
         ResultCollector collector = new ResultCollector(workspace);
+        EventListener scenarios = publisher -> publisher.registerHandlerFor(
+                TestCaseStarted.class, event -> connectors.forEach(Connector::scenarioStarted));
 
         Selection selection = request.selection();
         RuntimeOptionsBuilder builder = new RuntimeOptionsBuilder();
@@ -86,13 +90,13 @@ public final class Engine {
                 .withClassLoader(() -> classLoader)
                 .withFeatureSupplier(() -> parsed)
                 .withBackendSupplier(() -> List.of(backend))
-                .withAdditionalPlugins(collector, currentStep, variables)
+                .withAdditionalPlugins(collector, currentStep, variables, scenarios)
                 .build()
                 .run();
 
-        List<ScenarioResult> scenarios = collector.result().scenarios();
-        reports.writeSummary(request.profile(), selection, start, Duration.between(start, Instant.now()), scenarios);
+        List<ScenarioResult> results = collector.result().scenarios();
+        reports.writeSummary(request.profile(), selection, start, Duration.between(start, Instant.now()), results);
         reports.prune();
-        return new ExecutionResult(scenarios, reports.directory());
+        return new ExecutionResult(results, reports.directory());
     }
 }
