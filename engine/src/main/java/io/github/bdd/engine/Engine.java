@@ -15,7 +15,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.ServiceLoader;
 import java.util.UUID;
 
 /** The single entry point of the engine. */
@@ -26,18 +25,20 @@ public final class Engine {
 
     /**
      * The effective catalog of a workspace: the default phrases of the installed connectors, those of
-     * the engine, and the aliases of the workspace's {@code catalog.yaml}.
+     * the engine, and the aliases, composite and pending phrases of the workspace's
+     * {@code catalog.yaml}. The installed connectors are those of the tool and those of the plugins
+     * in the workspace's {@code plugins} folder.
      *
-     * @throws ConfigurationException if the catalog file is invalid, an alias does not fit the phrase
-     *     it stands for, or two phrases can match the same step
+     * @throws ConfigurationException if a plugin cannot be loaded, two connectors handle the same
+     *     source type, the catalog file is invalid, an alias does not fit the phrase it stands for,
+     *     or two phrases can match the same step
      * @throws IllegalStateException if an installed connector declares an invalid phrase
      */
     public static List<CatalogEntry> catalog(Path workspace) {
-        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-        List<Connector> connectors = ServiceLoader.load(Connector.class, classLoader).stream()
-                .map(ServiceLoader.Provider::get)
-                .toList();
-        return Catalog.load(workspace.toAbsolutePath().normalize(), connectors, Catalog.Context.NONE).entries();
+        Path root = workspace.toAbsolutePath().normalize();
+        try (Connectors installed = Connectors.load(root, Thread.currentThread().getContextClassLoader())) {
+            return Catalog.load(root, installed.list(), Catalog.Context.NONE).entries();
+        }
     }
 
     /**
@@ -46,7 +47,8 @@ public final class Engine {
      *
      * @throws IllegalArgumentException if the workspace has no {@code features} directory, or the
      *     selection names a path that does not exist or an invalid tag expression
-     * @throws ConfigurationException if the configuration of the sources is invalid, lacks the
+     * @throws ConfigurationException if a plugin of the workspace cannot be loaded, two connectors
+     *     handle the same source type, the configuration of the sources is invalid, lacks the
      *     requested profile or uses a source type no installed connector handles, or if the settings
      *     of the workspace are invalid
      * @throws IllegalStateException if an installed connector declares an invalid phrase
@@ -59,9 +61,13 @@ public final class Engine {
         }
 
         ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-        List<Connector> connectors = ServiceLoader.load(Connector.class, classLoader).stream()
-                .map(ServiceLoader.Provider::get)
-                .toList();
+        try (Connectors installed = Connectors.load(workspace, classLoader)) {
+            return run(request, workspace, installed.list(), classLoader);
+        }
+    }
+
+    private static ExecutionResult run(ExecutionRequest request, Path workspace, List<Connector> connectors,
+            ClassLoader classLoader) {
         Profile profile = Profile.load(workspace, request.profile(), request.environment(), connectors);
         CurrentStep currentStep = new CurrentStep(workspace);
         Variables variables = new Variables(request.environment());

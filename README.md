@@ -6,10 +6,11 @@ Stato: in costruzione. La specifica è nella issue #1.
 
 ## Moduli
 
-- `plugin-api`: il contratto dei connettori.
+- `plugin-api`: il contratto dei connettori, con la guida per scriverne uno ([plugin-api/README.md](plugin-api/README.md)).
 - `engine`: esegue le feature di un workspace con le frasi dei connettori installati.
 - `connector-fake`: connettore finto in memoria, supporto di test del motore.
 - `connector-http`: connettore per i servizi HTTP (vedi [Connettore HTTP](#connettore-http)).
+- `connector-example`: connettore esterno di esempio, costruito come plugin; i test del motore lo caricano dalla cartella dei plugin.
 - `cli`: punto d'ingresso; `run [workspace] [--profile <nome>] [--path <percorso>]... [--tags <espressione>] [--fail-on-pending]` esegue le feature in `<workspace>/features` sulle sorgenti del profilo scelto; `serve [workspace] [--port <n>]` avvia l'interfaccia web (vedi sotto).
 - `server`: API HTTP sulla cartella `features` di un workspace e UI statica, nello stesso artefatto.
 
@@ -50,6 +51,10 @@ profiles:
 ```
 
 I valori `${VARIABILE}` di `config` sono risolti dalle variabili d'ambiente; servono solo quelle del profilo scelto. Una configurazione invalida, o un tipo di sorgente senza connettore installato, ferma `run` prima di eseguire qualsiasi scenario.
+
+## Plugin
+
+Un connettore che lo strumento non include si installa senza ricompilare: il suo jar va in `<workspace>/plugins/`, oppure, con le sue dipendenze, in una cartella `<workspace>/plugins/<nome>/`. All'avvio i connettori dei plugin sono scoperti con `ServiceLoader` e si usano in `sources.yaml` e nelle feature come quelli inclusi. Ogni plugin ha un class loader suo, quindi le sue dipendenze non entrano in conflitto con quelle dello strumento o degli altri plugin. Un jar illeggibile, un connettore che non si carica, un plugin senza connettori o due connettori dello stesso tipo di sorgente fermano l'avvio con un errore che li nomina. Come scrivere un connettore: [plugin-api/README.md](plugin-api/README.md).
 
 ## Verifiche
 

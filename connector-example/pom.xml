@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.bdd</groupId>
+        <artifactId>bdd-project</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>connector-example</artifactId>
+    <description>
+        Example of an external connector, built as a plugin to drop in the plugins folder of a
+        workspace. The tests of the engine load it from there.
+    </description>
+
+    <properties>
+        <!-- Not the version the tool uses, on purpose: the plugin must see its own. -->
+        <example.snakeyaml.version>2.2</example.snakeyaml.version>
+    </properties>
+
+    <dependencies>
+        <!-- The tool provides the contract to its plugins. -->
+        <dependency>
+            <groupId>io.github.bdd</groupId>
+            <artifactId>plugin-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+            <version>${example.snakeyaml.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                The plugin as it goes in the plugins folder: a directory with the jar of the connector
+                and those of its dependencies, in target/plugin/example. It is assembled right after
+                compiling, so that the tests of the engine find it even when the build stops at test.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>plugin</id>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/plugin/example</outputDirectory>
+                            <!-- Without one it would take the place of the artifact of the module. -->
+                            <classifier>plugin</classifier>
+                            <forceCreation>true</forceCreation>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>plugin</id>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/plugin/example</outputDirectory>
+                            <includeScope>runtime</includeScope>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

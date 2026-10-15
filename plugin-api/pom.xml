@@ -11,4 +11,8 @@
     </parent>
 
     <artifactId>plugin-api</artifactId>
+    <description>
+        The contract of the connectors, the only dependency of a connector, which the tool provides to
+        its plugins. See README.md for how to write one.
+    </description>
 </project>
