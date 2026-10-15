@@ -20,7 +20,8 @@ public final class Main {
     private static final int EXIT_ERROR = 2;
     private static final int EXIT_NO_SCENARIO_SELECTED = 3;
 
-    private static final String USAGE = "Usage: run [workspace] [--profile <name>] [--path <path[:line]>]... [--tags <expression>]";
+    private static final String USAGE = "Usage: run [workspace] [--profile <name>] [--path <path[:line]>]... "
+            + "[--tags <expression>] [--fail-on-pending]";
 
     private Main() {
     }
@@ -43,9 +44,12 @@ public final class Main {
         String profile = null;
         String tags = null;
         List<String> paths = new ArrayList<>();
+        boolean failOnPending = false;
         for (int i = 1; i < args.length; i++) {
             boolean hasValue = i + 1 < args.length && !args[i + 1].startsWith("--");
-            if (args[i].equals("--profile") && profile == null && hasValue) {
+            if (args[i].equals("--fail-on-pending") && !failOnPending) {
+                failOnPending = true;
+            } else if (args[i].equals("--profile") && profile == null && hasValue) {
                 profile = args[++i];
             } else if (args[i].equals("--tags") && tags == null && hasValue) {
                 tags = args[++i];
@@ -73,7 +77,7 @@ public final class Main {
             err.println("No scenario matches the selection: nothing was executed");
             return EXIT_NO_SCENARIO_SELECTED;
         }
-        return result.successful() ? EXIT_SUCCESS : EXIT_SCENARIOS_NOT_PASSED;
+        return result.successful(failOnPending) ? EXIT_SUCCESS : EXIT_SCENARIOS_NOT_PASSED;
     }
 
     private static void print(ExecutionResult result, PrintStream out) {

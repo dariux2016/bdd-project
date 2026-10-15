@@ -16,12 +16,14 @@ import io.github.bdd.plugin.Phrase;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -45,7 +47,17 @@ import java.util.regex.Pattern;
  *           - [customer, equals, "{customer}"]
  *       - step: a record of the fake store "orders" contains the JSON
  *         docString: '{"customer": "{customer}"}'             # may cite {docString}: that of the composite step
+ * pending:
+ *   - id: orders.archive                                       # the id of the phrase a connector will declare
+ *     phrase: "the order {order} is archived after {days} days"
+ *     language: en                                             # optional, en by default
+ *     parameters:                                              # optional: the type of each parameter,
+ *       days: integer                                          # string (in quotes) by default
  * </pre>
+ *
+ * <p>A pending phrase is one that no installed connector implements yet: its steps are pending.
+ * Once a connector declares a phrase with its id, it leads to that phrase's action, as an alias
+ * does, so that the features using it run unchanged.
  */
 final class Catalog {
 
@@ -57,6 +69,9 @@ final class Catalog {
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{(\\w+)}");
     private static final Pattern OPTIONAL = Pattern.compile("\\(([^()]*)\\)");
     private static final Pattern ALTERNATION = Pattern.compile("[^\\s/{}()]+(?:/[^\\s/{}()]+)+");
+    /** How a pending phrase types its parameters. */
+    private static final String STRING = "string";
+    private static final String INTEGER = "integer";
     private static final String PASSED_TABLE = "{" + CompositeStepDefinition.TABLE + "}";
 
     /** What the step definitions need to run, which describing the catalog does not. */
@@ -66,12 +81,25 @@ final class Catalog {
         static final Context NONE = new Context(null, null, null, null, Variables.NONE);
     }
 
-    private record Declared(String origin, Connector connector, Phrase phrase) {
+    /**
+     * @param pending where the catalog declares the pending phrase this one was, with the types it
+     *     gives its parameters; {@code null} if it was never pending
+     */
+    private record Declared(String origin, Connector connector, Phrase phrase, Activated pending) {
+
+        Declared(String origin, Connector connector, Phrase phrase) {
+            this(origin, connector, phrase, null);
+        }
+    }
+
+    /** A pending phrase that a connector now implements. */
+    private record Activated(String path, List<Parameter> parameters) {
     }
 
     private final Context context;
     private final List<Declared> declared = new ArrayList<>();
     private final List<PhraseStepDefinition> definitions = new ArrayList<>();
+    private final List<PendingStepDefinition> pending = new ArrayList<>();
     private final List<CompositeStepDefinition> composites = new ArrayList<>();
 
     private Catalog(Context context) {
@@ -100,12 +128,18 @@ final class Catalog {
             }
         }
         Map<String, Object> file = file(workspace);
+        catalog.rejectConflictingIds();
         catalog.addAliases(file.get("aliases"));
+        catalog.addPending(file.get("pending"));
 
         for (Declared phrase : catalog.declared) {
-            catalog.definitions.add(new PhraseStepDefinition(phrase.connector().sourceType(), phrase.phrase(),
-                    action(phrase.connector(), phrase.phrase()), context.profile(), context.polling(),
-                    context.diagnostics(), context.currentStep(), context.variables()));
+            PhraseStepDefinition definition = new PhraseStepDefinition(phrase.connector().sourceType(),
+                    phrase.phrase(), action(phrase.connector(), phrase.phrase()), context.profile(), context.polling(),
+                    context.diagnostics(), context.currentStep(), context.variables());
+            if (phrase.pending() != null) {
+                requireSameParameters(phrase, definition);
+            }
+            catalog.definitions.add(definition);
         }
         catalog.addComposites(file.get("composites"));
         catalog.rejectAmbiguity();
@@ -128,7 +162,7 @@ final class Catalog {
             return Map.of();
         }
         Map<String, Object> root = YAML.mapping(YAML.parse(file), "");
-        YAML.allowOnly(root, "", "aliases", "composites");
+        YAML.allowOnly(root, "", "aliases", "composites", "pending");
         return root;
     }
 
@@ -158,6 +192,120 @@ final class Catalog {
             }
             declared.add(new Declared("workspace", stands.connector(), stands.phrase().in(code, pattern)));
         }
+    }
+
+    /** Phrases that share an id are the same phrase, so they must lead to the same action and check. */
+    private void rejectConflictingIds() {
+        Map<String, Declared> byId = new HashMap<>();
+        for (Declared phrase : declared) {
+            String id = phrase.phrase().id();
+            if (id == null) {
+                continue;
+            }
+            Declared first = byId.putIfAbsent(id, phrase);
+            if (first != null && (first.connector() != phrase.connector()
+                    || !first.phrase().action().equals(phrase.phrase().action())
+                    || first.phrase().verification() != phrase.phrase().verification())) {
+                throw new IllegalStateException("The phrases '" + first.phrase().pattern() + "' (" + first.origin()
+                        + ") and '" + phrase.phrase().pattern() + "' (" + phrase.origin() + ") have the same id '"
+                        + id + "' but lead to different actions or checks");
+            }
+        }
+    }
+
+    private void addPending(Object section) {
+        if (section == null) {
+            return;
+        }
+        List<?> list = list(section, "pending");
+        List<Declared> implemented = declared.stream()
+                .filter(phrase -> !phrase.origin().equals("workspace") && phrase.phrase().id() != null)
+                .toList();
+        for (int i = 0; i < list.size(); i++) {
+            String path = "pending[" + i + "]";
+            Map<String, Object> entry = YAML.mapping(list.get(i), path);
+            YAML.allowOnly(entry, path, "id", "phrase", "language", "parameters");
+            String id = text(entry.get("id"), path + ".id");
+            String pattern = text(entry.get("phrase"), path + ".phrase");
+            String code = language(entry, path);
+            List<Parameter> parameters = pendingParameters(pattern, entry.get("parameters"), path);
+
+            List<Declared> implementing = implemented.stream()
+                    .filter(phrase -> phrase.phrase().id().equals(id))
+                    .toList();
+            if (implementing.isEmpty()) {
+                pending.add(new PendingStepDefinition(pattern, code, id, parameters, context.currentStep()));
+            } else if (implementing.stream().noneMatch(phrase -> phrase.phrase().pattern().equals(pattern))) {
+                Declared stands = implementing.stream()
+                        .filter(phrase -> phrase.phrase().language().equals(code))
+                        .findFirst()
+                        .orElse(implementing.getFirst());
+                declared.add(new Declared("workspace", stands.connector(), stands.phrase().in(code, pattern),
+                        new Activated(path, parameters)));
+            }
+            // Otherwise a connector declares the very wording, which takes the place of the pending phrase.
+        }
+    }
+
+    /** The parameters of a pending phrase, in the order its pattern uses them, with the types the catalog gives. */
+    private static List<Parameter> pendingParameters(String pattern, Object section, String path) {
+        Map<String, Object> types = section == null ? Map.of() : YAML.mapping(section, path + ".parameters");
+        List<String> names = new ArrayList<>();
+        Matcher placeholder = PLACEHOLDER.matcher(pattern);
+        while (placeholder.find()) {
+            if (names.contains(placeholder.group(1))) {
+                throw YAML.invalid(path + ".phrase", "the parameter {" + placeholder.group(1) + "} is used more than once");
+            }
+            names.add(placeholder.group(1));
+        }
+        for (String name : types.keySet()) {
+            if (!names.contains(name)) {
+                throw YAML.invalid(path + ".parameters." + name, "the phrase has no parameter {" + name + "}");
+            }
+        }
+        List<Parameter> parameters = new ArrayList<>();
+        for (String name : names) {
+            Object type = types.getOrDefault(name, STRING);
+            if (!STRING.equals(type) && !INTEGER.equals(type)) {
+                throw YAML.invalid(path + ".parameters." + name, "expected " + STRING + " or " + INTEGER
+                        + " but was " + YamlFile.show(type));
+            }
+            parameters.add(new Parameter(name, INTEGER.equals(type)
+                    ? io.github.bdd.plugin.ParameterType.INTEGER
+                    : io.github.bdd.plugin.ParameterType.STRING));
+        }
+        return parameters;
+    }
+
+    /**
+     * A pending phrase that a connector now implements must take the parameters of the connector's
+     * phrase, written the same way, or the features written for it would no longer match.
+     */
+    private static void requireSameParameters(Declared phrase, PhraseStepDefinition definition) {
+        Map<String, String> expected = new TreeMap<>();
+        definition.parameters().stream()
+                .filter(parameter -> parameter.type() != io.github.bdd.plugin.ParameterType.TEXT
+                        && parameter.type() != io.github.bdd.plugin.ParameterType.TABLE)
+                .forEach(parameter -> expected.put(parameter.name(), written(parameter)));
+        Map<String, String> given = new TreeMap<>();
+        phrase.pending().parameters().forEach(parameter -> given.put(parameter.name(), written(parameter)));
+        if (!given.equals(expected)) {
+            throw YAML.invalid(phrase.pending().path(), "the pending phrase '" + phrase.phrase().pattern()
+                    + "' is now implemented by the phrase with id '" + phrase.phrase().id() + "' of connector '"
+                    + phrase.connector().sourceType() + "', which takes " + describe(expected)
+                    + ", but the pending phrase takes " + describe(given));
+        }
+    }
+
+    /** How a step writes a parameter: a text in quotes, or a bare integer. */
+    private static String written(Parameter parameter) {
+        return parameter.type() == io.github.bdd.plugin.ParameterType.INTEGER ? INTEGER : STRING;
+    }
+
+    private static String describe(Map<String, String> parameters) {
+        return parameters.isEmpty() ? "no parameters" : String.join(", ", parameters.entrySet().stream()
+                .map(parameter -> "{" + parameter.getKey() + "} as " + parameter.getValue())
+                .toList());
     }
 
     private void addComposites(Object section) {
@@ -360,6 +508,7 @@ final class Catalog {
         List<StepDefinition> all = definitions();
         List<String> described = new ArrayList<>();
         declared.forEach(phrase -> described.add("'" + phrase.phrase().pattern() + "' (" + phrase.origin() + ")"));
+        pending.forEach(phrase -> described.add("'" + phrase.pattern() + "' (workspace, pending)"));
         composites.forEach(composite -> described.add("'" + composite.pattern() + "' (workspace)"));
         List<Pattern> regexps = all.stream()
                 .map(definition -> factory.createExpression(definition.getPattern()).getRegexp())
@@ -416,9 +565,13 @@ final class Catalog {
                 (String text) -> text);
     }
 
-    /** The phrases of the connectors and of the engine, their aliases, then the composite phrases. */
+    /**
+     * The phrases of the connectors and of the engine, their aliases, the pending phrases, then the
+     * composite ones.
+     */
     List<StepDefinition> definitions() {
         List<StepDefinition> all = new ArrayList<>(definitions);
+        all.addAll(pending);
         all.addAll(composites);
         return all;
     }
@@ -433,15 +586,19 @@ final class Catalog {
         for (int i = 0; i < declared.size(); i++) {
             Declared phrase = declared.get(i);
             entries.add(new CatalogEntry(phrase.phrase().pattern(), phrase.phrase().language(), phrase.origin(),
-                    phrase.connector().sourceType() + "." + phrase.phrase().action(),
-                    phrase.phrase().verification(), definitions.get(i).parameters(), List.of()));
+                    phrase.connector().sourceType() + "." + phrase.phrase().action(), phrase.phrase().id(),
+                    phrase.phrase().verification(), definitions.get(i).parameters(), List.of(), false));
+        }
+        for (PendingStepDefinition phrase : pending) {
+            entries.add(new CatalogEntry(phrase.pattern(), phrase.language(), "workspace", null, phrase.id(), null,
+                    phrase.parameters(), List.of(), true));
         }
         for (CompositeStepDefinition composite : composites) {
-            entries.add(new CatalogEntry(composite.pattern(), composite.language(), "workspace", null, null,
+            entries.add(new CatalogEntry(composite.pattern(), composite.language(), "workspace", null, null, null,
                     composite.parameters().stream()
                             .map(name -> new Parameter(name, io.github.bdd.plugin.ParameterType.STRING))
                             .toList(),
-                    composite.steps().stream().map(Step::text).toList()));
+                    composite.steps().stream().map(Step::text).toList(), false));
         }
         return entries;
     }

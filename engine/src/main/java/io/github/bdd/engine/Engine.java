@@ -94,9 +94,12 @@ public final class Engine {
                 .build()
                 .run();
 
-        List<ScenarioResult> results = collector.result().scenarios();
-        reports.writeSummary(request.profile(), selection, start, Duration.between(start, Instant.now()), results);
+        ExecutionResult result = collector.result();
+        if (result.scenarios().stream().anyMatch(scenario -> scenario.status() == Status.PENDING)) {
+            reports.reportPendingAsSkipped();
+        }
+        reports.writeSummary(request.profile(), selection, start, Duration.between(start, Instant.now()), result);
         reports.prune();
-        return new ExecutionResult(results, reports.directory());
+        return new ExecutionResult(result.scenarios(), reports.directory());
     }
 }

@@ -10,7 +10,7 @@ Stato: in costruzione. La specifica è nella issue #1.
 - `engine`: esegue le feature di un workspace con le frasi dei connettori installati.
 - `connector-fake`: connettore finto in memoria, supporto di test del motore.
 - `connector-http`: connettore per i servizi HTTP (vedi [Connettore HTTP](#connettore-http)).
-- `cli`: punto d'ingresso; `run [workspace] [--profile <nome>] [--path <percorso>]... [--tags <espressione>]` esegue le feature in `<workspace>/features` sulle sorgenti del profilo scelto; `serve [workspace] [--port <n>]` avvia l'interfaccia web (vedi sotto).
+- `cli`: punto d'ingresso; `run [workspace] [--profile <nome>] [--path <percorso>]... [--tags <espressione>] [--fail-on-pending]` esegue le feature in `<workspace>/features` sulle sorgenti del profilo scelto; `serve [workspace] [--port <n>]` avvia l'interfaccia web (vedi sotto).
 - `server`: API HTTP sulla cartella `features` di un workspace e UI statica, nello stesso artefatto.
 
 ## Interfaccia web (`serve`)
@@ -202,7 +202,7 @@ aliases:
     language: en                                             # facoltativo, en di default
 ```
 
-Un alias deve usare gli stessi parametri della frase che rappresenta, altrimenti il caricamento fallisce con un errore che li elenca. Due frasi i cui pattern possono corrispondere allo stesso step sono segnalate come ambigue, indicando entrambe e la loro origine, prima di eseguire qualsiasi scenario. `Engine.catalog(workspace)` restituisce il catalogo effettivo: per ogni frase pattern, lingua, origine (`connector:<tipo>`, `engine`, `workspace`), bersaglio (`<tipo>.<azione>`), verifica, parametri e, per le frasi composte, gli step in cui si espandono.
+Un alias deve usare gli stessi parametri della frase che rappresenta, altrimenti il caricamento fallisce con un errore che li elenca. Due frasi i cui pattern possono corrispondere allo stesso step sono segnalate come ambigue, indicando entrambe e la loro origine, prima di eseguire qualsiasi scenario. `Engine.catalog(workspace)` restituisce il catalogo effettivo: per ogni frase pattern, lingua, origine (`connector:<tipo>`, `engine`, `workspace`), bersaglio (`<tipo>.<azione>`), identificativo, verifica, parametri, se è pending e, per le frasi composte, gli step in cui si espandono.
 
 ### Frasi composte
 
@@ -231,6 +231,24 @@ composites:
 - Le variabili salvate dagli step interni restano disponibili nel resto dello scenario.
 - Se uno step interno fallisce, i successivi non vengono eseguiti e lo step composto fallisce indicando quale step interno è fallito e perché: `Step 2 of the composite phrase '...', '<step>', failed: <motivo>`. Gli errori di una tabella scritta nel catalogo citano la sua posizione, es. `catalog.yaml: composites[0].steps[1].table[2]`.
 - Nei report la frase composta è un solo step; l'elenco degli step interni con il loro esito è nel suo output (`cucumber.json`, `report.html`), in `StepResult.steps()` e sotto lo step nell'output di `run`.
+
+### Frasi pending
+
+Una frase può entrare nel catalogo prima che un connettore la implementi: l'autore la usa subito nelle feature e lo step risulta `pending`, distinto da passato, fallito e non definito. Sta in `catalog.yaml`, con un identificativo:
+
+```yaml
+pending:
+  - id: orders.archive                                       # l'identificativo della frase che il connettore dichiarerà
+    phrase: "the order {order} is archived after {days} days"
+    language: en                                             # facoltativo, en di default
+    parameters:                                              # facoltativo: il tipo di ciascun parametro,
+      days: integer                                          # string (tra virgolette) di default
+```
+
+- Lo step pending accetta una tabella o un testo multilinea; gli step successivi dello scenario sono saltati e lo scenario è `pending`. Una frase composta con uno step interno pending è pending.
+- A console, in `summary.json` (`counts.pending`) e in `cucumber.json`/`report.html` l'esito è `pending`; in `junit.xml`, che non ha un esito pending, lo scenario è `skipped`.
+- Di default gli scenari pending non rendono diverso da zero l'exit code di `run`; con `--fail-on-pending` sì (`ExecutionResult.successful(true)`).
+- Un connettore dà un identificativo a una frase con `Phrase.withId("orders.archive")`. Quando un connettore installato dichiara una frase con l'identificativo di una frase pending, questa porta alla sua azione, come un alias, e le feature passano senza modifiche. I suoi parametri devono allora essere quelli della frase del connettore, scritti allo stesso modo (testo tra virgolette o intero), altrimenti il caricamento fallisce indicando `pending[i]` e i parametri attesi.
 
 ## Connettore HTTP
 
@@ -326,7 +344,7 @@ Le espressioni di tag usano `and`, `or`, `not` e le parentesi, es. `@smoke`, `no
 
 Una selezione che non corrisponde a nessuno scenario non è un successo: `run` lo scrive su stderr (`No scenario matches the selection: nothing was executed`) ed esce con codice 3. In `ExecutionResult`, `noScenarioSelected()` è vero e `successful()` falso.
 
-Codici di uscita di `run`: `0` tutti gli scenari passati, `1` almeno uno non passato, `2` errore di uso o di configurazione, `3` nessuno scenario selezionato.
+Codici di uscita di `run`: `0` tutti gli scenari passati (o pending, salvo `--fail-on-pending`), `1` almeno uno non passato, `2` errore di uso o di configurazione, `3` nessuno scenario selezionato.
 
 ## Report
 
@@ -343,7 +361,7 @@ Ogni esecuzione scrive in `<workspace>/reports/<istante>/`, dove `<istante>` è 
   "selection": { "paths": ["features/ordini"], "tags": "@smoke" },
   "startedAt": "2026-10-13T16:11:11.885Z",
   "durationMillis": 412,
-  "counts": { "total": 3, "passed": 2, "failed": 1, "skipped": 0, "undefined": 0 },
+  "counts": { "total": 3, "passed": 2, "failed": 1, "pending": 0, "skipped": 0, "undefined": 0 },
   "noScenarioSelected": false,
   "successful": false
 }

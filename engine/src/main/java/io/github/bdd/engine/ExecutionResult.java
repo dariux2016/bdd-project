@@ -17,10 +17,23 @@ public record ExecutionResult(List<ScenarioResult> scenarios, Path reports) {
         this(scenarios, null);
     }
 
-    /** Whether the selection matched at least one scenario and every scenario passed. */
+    /**
+     * Whether the selection matched at least one scenario and every scenario passed, or is pending
+     * on a phrase no connector implements yet.
+     */
     public boolean successful() {
-        return !noScenarioSelected()
-                && scenarios.stream().allMatch(scenario -> scenario.status() == Status.PASSED);
+        return successful(false);
+    }
+
+    /**
+     * Whether the selection matched at least one scenario and every scenario passed.
+     *
+     * @param pendingFails whether a pending scenario makes the execution unsuccessful, as a failed
+     *     one does
+     */
+    public boolean successful(boolean pendingFails) {
+        return !noScenarioSelected() && scenarios.stream().allMatch(scenario -> scenario.status() == Status.PASSED
+                || scenario.status() == Status.PENDING && !pendingFails);
     }
 
     /** Whether the selection matched no scenario at all, so that nothing was verified. */

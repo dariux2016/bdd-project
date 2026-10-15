@@ -2,6 +2,17 @@ package io.github.bdd.engine;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
+import org.xml.sax.SAXException;
+
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -103,9 +114,49 @@ final class Reports {
         return directory.resolve(name).toString().replace('\\', '/');
     }
 
+    /**
+     * JUnit XML has no pending outcome, and Cucumber writes a pending scenario there as failed; it
+     * is rewritten as skipped, so that a pending scenario does not fail the tools reading the report
+     * any more than it fails the execution.
+     */
+    void reportPendingAsSkipped() {
+        Path file = directory.resolve("junit.xml");
+        try {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            Document document = factory.newDocumentBuilder().parse(file.toFile());
+            NodeList failures = document.getElementsByTagName("failure");
+            List<Element> pending = new ArrayList<>();
+            for (int i = 0; i < failures.getLength(); i++) {
+                Element failure = (Element) failures.item(i);
+                if (failure.getAttribute("type").equals(PendingStepDefinition.PendingPhraseException.class.getName())) {
+                    pending.add(failure);
+                }
+            }
+            if (pending.isEmpty()) {
+                return;
+            }
+            for (Element failure : pending) {
+                Element skipped = document.createElement("skipped");
+                skipped.setAttribute("message", failure.getAttribute("message"));
+                failure.getParentNode().replaceChild(skipped, failure);
+            }
+            Element suite = document.getDocumentElement();
+            suite.setAttribute("failures", String.valueOf(Integer.parseInt(suite.getAttribute("failures")) - pending.size()));
+            suite.setAttribute("skipped", String.valueOf(Integer.parseInt(suite.getAttribute("skipped")) + pending.size()));
+            TransformerFactory.newInstance().newTransformer()
+                    .transform(new DOMSource(document), new StreamResult(file.toFile()));
+        } catch (IOException e) {
+            throw new UncheckedIOException("Cannot rewrite the pending scenarios of " + file, e);
+        } catch (ParserConfigurationException | SAXException | TransformerException | NumberFormatException e) {
+            throw new IllegalStateException("Cannot rewrite the pending scenarios of " + file, e);
+        }
+    }
+
     /** Writes {@code summary.json}, the machine-readable outcome of the execution. */
     void writeSummary(String profile, Selection selection, Instant start, Duration duration,
-            List<ScenarioResult> scenarios) {
+            ExecutionResult result) {
+        List<ScenarioResult> scenarios = result.scenarios();
         Map<String, Object> counts = new LinkedHashMap<>();
         counts.put("total", scenarios.size());
         for (Status status : Status.values()) {
@@ -123,8 +174,8 @@ final class Reports {
         summary.put("durationMillis", duration.toMillis());
         summary.put("counts", counts);
         summary.put("noScenarioSelected", scenarios.isEmpty());
-        summary.put("successful", !scenarios.isEmpty()
-                && scenarios.stream().allMatch(scenario -> scenario.status() == Status.PASSED));
+        // Pending scenarios count as successful here, as they do by default for the exit code of run.
+        summary.put("successful", result.successful());
         try {
             new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT)
                     .writeValue(directory.resolve("summary.json").toFile(), summary);

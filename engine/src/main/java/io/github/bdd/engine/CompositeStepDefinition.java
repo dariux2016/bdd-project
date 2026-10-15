@@ -53,8 +53,16 @@ final class CompositeStepDefinition implements StepDefinition {
     private record Target(StepDefinition definition, Expression expression) {
     }
 
-    /** @param failure why the composite phrase failed, naming the step; {@code null} if it passed */
-    record Outcome(List<StepResult> steps, String failure) {
+    /**
+     * @param failure why the composite phrase failed or is pending, naming the step; {@code null} if
+     *     it passed
+     * @param pending whether a step is pending rather than failed
+     */
+    record Outcome(List<StepResult> steps, String failure, boolean pending) {
+
+        Status status() {
+            return failure == null ? Status.PASSED : pending ? Status.PENDING : Status.FAILED;
+        }
     }
 
     private final String pattern;
@@ -132,6 +140,9 @@ final class CompositeStepDefinition implements StepDefinition {
             }
             Outcome outcome = run(values, args.length > parameters.size() ? args[parameters.size()] : null);
             currentStep.ranInnerSteps(outcome.steps(), detail(outcome.steps()));
+            if (outcome.pending()) {
+                throw new PendingStepDefinition.PendingPhraseException(outcome.failure());
+            }
             if (outcome.failure() != null) {
                 throw new AssertionError(outcome.failure());
             }
@@ -155,6 +166,7 @@ final class CompositeStepDefinition implements StepDefinition {
         }
         List<StepResult> results = new ArrayList<>();
         String failure = null;
+        boolean pending = false;
         for (int i = 0; i < steps.size(); i++) {
             Step step = steps.get(i);
             String text = substitute(step.text(), byName);
@@ -164,12 +176,13 @@ final class CompositeStepDefinition implements StepDefinition {
             }
             StepResult result = runStep(i, step, text, byName, stepArgument);
             results.add(result);
-            if (result.status() == Status.FAILED) {
+            if (result.status() == Status.FAILED || result.status() == Status.PENDING) {
+                pending = result.status() == Status.PENDING;
                 failure = "Step " + (i + 1) + " of the composite phrase '" + pattern + "', '" + text
-                        + "', failed: " + result.error();
+                        + "', " + (pending ? "is pending" : "failed: " + result.error());
             }
         }
-        return new Outcome(results, failure);
+        return new Outcome(results, failure, pending);
     }
 
     private void requireArgument(Object stepArgument) {
@@ -207,8 +220,8 @@ final class CompositeStepDefinition implements StepDefinition {
             if (target.definition() instanceof CompositeStepDefinition composite) {
                 Outcome outcome = currentStep.withTableAt(rows, () -> composite.run(
                         args.stream().map(value -> (String) value).toList(), argument));
-                return new StepResult(StepResult.INNER_KEYWORD, text,
-                        outcome.failure() == null ? Status.PASSED : Status.FAILED, outcome.failure(), outcome.steps());
+                return new StepResult(StepResult.INNER_KEYWORD, text, outcome.status(),
+                        outcome.status() == Status.FAILED ? outcome.failure() : null, outcome.steps());
             }
             if (argument != null) {
                 args.add(argument);
@@ -218,6 +231,8 @@ final class CompositeStepDefinition implements StepDefinition {
                 return null;
             });
             return new StepResult(StepResult.INNER_KEYWORD, text, Status.PASSED, null);
+        } catch (PendingStepDefinition.PendingPhraseException e) {
+            return new StepResult(StepResult.INNER_KEYWORD, text, Status.PENDING, null);
         } catch (Exception | AssertionError e) {
             Throwable cause = e instanceof CucumberInvocationTargetException invocation
                     ? invocation.getInvocationTargetExceptionCause()

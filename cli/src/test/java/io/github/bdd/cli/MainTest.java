@@ -90,6 +90,34 @@ class MainTest {
     }
 
     @Test
+    void pendingScenariosExitWithZeroUnlessAskedToFail() throws IOException {
+        Files.writeString(workspace.resolve("catalog.yaml"), """
+                pending:
+                  - id: fruit.eat
+                    phrase: "the apples are eaten"
+                """);
+        feature("""
+                Feature: Store
+                  Scenario: Eating
+                    Given the fake store "fruit" has "apples" set to 5
+                    When the apples are eaten
+                    Then the fake store "fruit" should have "apples" equal to 0
+                """);
+
+        assertThat(run("run", workspace.toString(), "--profile", "local")).isZero();
+        assertThat(outputWithoutReportsLine()).isEqualToNormalizingNewlines("""
+                PENDING    features/store.feature:2 Eating
+                  PASSED     Given the fake store "fruit" has "apples" set to 5
+                  PENDING    When the apples are eaten
+                  SKIPPED    Then the fake store "fruit" should have "apples" equal to 0
+
+                1 scenario: 1 pending
+                """);
+
+        assertThat(run("run", workspace.toString(), "--profile", "local", "--fail-on-pending")).isEqualTo(1);
+    }
+
+    @Test
     void invalidInvocationExitsWithUsageError() {
         assertThat(run("launch")).isEqualTo(2);
         assertThat(err.toString(StandardCharsets.UTF_8)).contains("Usage: run [workspace] [--profile <name>]");
